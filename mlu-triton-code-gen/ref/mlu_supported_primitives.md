@@ -60,7 +60,13 @@
     ```python
     # MLU扩展示例
     out = in.to(tl.int32, bitcast=True) 
-    3.  **编译器提示 (Compiler Hints)**：
+    ```
+
+2.  **原子操作类型增强**：
+    除了标准的 `int32` 等类型外，MLU平台显著增强了对低位宽类型的原子支持：
+    * **新增支持**：`float16`, `bfloat16`, `int8`, `int16`。
+
+3.  **编译器提示 (Compiler Hints)**：
     * 支持 `multiple_of`, `max_contiguous`, `max_constancy`（不支持 `int64`）。
     * **注意**：`debug_barrier` 原语在MLU架构中虽可调用，但语义**不生效**。
 

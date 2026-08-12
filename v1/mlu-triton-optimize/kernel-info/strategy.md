@@ -56,8 +56,8 @@
 ### Step 1：识别目标 kernel 和指针参数
 
 1. 找到输入脚本中的 `@triton.jit` kernel 和 wrapper 中的 `kernel[grid](...)` launch。
-2. 若存在多个 kernel 或多个 launch，选择第一个实际 launch 的 Triton kernel 作为目标 kernel。
-3. 仅分析目标 kernel，收集作为 `tl.load` 或 `tl.store` 地址基址出现的指针参数。
+2. 调用方必须给出当前策略要分析的目标 kernel/launch；若文件只有一个实际 Triton launch，可自动选取。存在多个 kernel 或多个 launch且调用方未指定时，停止并要求逐个选择，不得静默取第一个。
+3. 仅分析选定目标 kernel，收集作为 `tl.load` 或 `tl.store` 地址基址出现的指针参数；上层策略若要覆盖整个文件，必须对每个实际 launch 分别调用本流程。
 4. 只输出 tensor 指针参数；shape 参数、stride 参数、编译期常量参数、普通标量参数不作为顶层 key。
 
 ### Step 2：从 wrapper 和测试代码确定 shape 与 stride

@@ -11,7 +11,7 @@ GenTestCode 负责根据需求文档和生成的 Triton kernel 代码，生成�
 | Extractor 输出 | `{输出存储路径}/Extractor/requirement.md` |
 | io_shapes | `{输出存储路径}/KernelGen/step1_io_shapes.json` |
 | Step 5 输出 | `{输出存储路径}/KernelGen/step5_kernel_code.py` |
-| MLU 平台规则 | `.claude/skills/share/mlu/references/platform-rules.md` |
+| RTX 3090 平台规则 | `.claude/skills/share/gpu/references/platform-rules.md` |
 | 用户输入 | 输出存储路径（默认为 `output_dir`） |
 
 ## 输出
@@ -167,7 +167,7 @@ def wrapper_function(...):
 
 def create_inputs():
     """创建测试输入数据"""
-    x = torch.randn(SHAPE, dtype=DTYPE, device='mlu')
+    x = torch.randn(SHAPE, dtype=DTYPE, device='cuda')
     return x
 
 # ==========================================================
@@ -222,7 +222,7 @@ def performance_test():
     # 若算子有多个输入/输出，请分别累加每个 tensor 的 numel() * element_size()。
     sample_torch_out = torch_reference(x)
     sample_triton_out = wrapper_function(x)
-    torch.mlu.synchronize()
+    torch.cuda.synchronize()
 
     def tensor_bytes(t):
         return t.numel() * t.element_size()
@@ -249,21 +249,21 @@ def performance_test():
 if __name__ == "__main__":
     print("=" * 60)
     print(f"  {算子名} Test")
-    print(f"  Shape: {SHAPE}, Device: mlu, dtype: {DTYPE}")
+    print(f"  Shape: {SHAPE}, Device: cuda, dtype: {DTYPE}")
     print("=" * 60)
 
     # Run accuracy test
     accuracy_passed = accuracy_test()
     if not accuracy_passed:
-        print("\nWARNING: Accuracy test failed!")
+        raise AssertionError("Accuracy test failed")
 
     # Run performance test
     performance_test()
 ```
 
-### 步骤 4：处理 CUDA 到 MLU 的适配
+### 步骤 4：处理 NVIDIA GPU/CUDA 适配
 
-仅在目标平台为 MLU 时读取 `.claude/skills/share/mlu/references/platform-rules.md`，按其中的设备字面量、同步 API、Grid、NRAM 和执行后端规则生成测试代码。不要在本通用测试流程中复制平台约束。
+读取 `.claude/skills/share/gpu/references/platform-rules.md`，按其中的设备字面量、同步 API、launch、shared memory、寄存器、occupancy 和执行后端规则生成测试代码。不要在本通用测试流程中复制平台约束。
 
 ### 步骤 5：保存结果
 

@@ -1,21 +1,23 @@
 ---
 name: mlu-triton-code-review
-description: Triton Kernel 代码验证工具，负责对生成的 Triton kernel 代码进行动态检查和修复，直到获得正确的精度值
+description: NVIDIA GPU/CUDA Triton Kernel 代码验证工具，负责在 RTX 3090 上动态检查和修复生成代码，直到精度正确
 ---
 
 # mlu-triton-code-review
 
 ## 概述
 
-该 SKILL 是 MLU Triton Kernel 代码验证修复工具，对输入的 Python 文件（同时包含 kernel 与测试代码）进行**执行优先**的验证：先跑一次原代码，通过则直接完成；失败才依次进入静态检查 → 动态修复的迭代流程，直至得到可正确执行且精度达标的代码。
+该 SKILL 是 NVIDIA GPU/CUDA Triton Kernel 代码验证修复工具，对输入的 Python 文件（同时包含 kernel 与测试代码）进行**执行优先**的验证：先跑一次原代码，通过则直接完成；失败才依次进入静态检查 → 动态修复的迭代流程，直至得到可正确执行且精度达标的代码。
 
-**核心目标**：让输入的 Triton kernel 代码在 MLU 上正确运行并通过精度验证。
+**核心目标**：让输入的 Triton kernel 代码在 RTX 3090/CUDA 上正确运行并通过精度验证。
+
+> 兼容说明：目录名、frontmatter `name` 与 `mlu-triton-*` 调用名保持不变；实际审查目标为 NVIDIA GPU/CUDA。
 
 **工作原则**：
 - **执行优先**：测试能通过就不做任何静态/动态检查，避免误伤
 - **文件传递信息**：所有中间产物和总结通过文件输出，**不返回摘要字符串到上下文**
 - **统一输入输出契约**：输入为 `.py` 文件路径，输出固定为同目录下的 `xxx_fix.py` + `xxx_fix.md`
-- **运行环境选择规则**：动态执行必须遵守 `.claude/skills/mlu-triton-main/SKILL.md` 中的规则；本地执行环境有可用 MLU/Triton-MLU 工具链时优先本地执行，否则在当前 `JOB_ID` 下通过 `submit_task_to_worker.py` 提交 Worker Task，并以真实日志/结果判定
+- **运行环境选择规则**：动态执行必须遵守 `.claude/skills/mlu-triton-main/SKILL.md` 中的规则；本地执行环境有可用 RTX 3090/CUDA/Triton 工具链时优先本地执行，否则在当前 `JOB_ID` 下通过 `submit_task_to_worker.py` 提交 Worker Task，并以真实日志/结果判定
 
 ## 用法
 
@@ -37,12 +39,12 @@ description: Triton Kernel 代码验证工具，负责对生成的 Triton kernel
 
 | 文件 | 说明 |
 |------|------|
-| `{同目录}/xxx_fix.py` | 最终可执行、通过测试的 Python 文件；若原代码直接通过，则为原代码的原样拷贝 |
+| `{同目录}/xxx_fix.py` | 最终候选 Python 文件；若原代码通过则原样拷贝，若修复未收敛则必须在报告中标记未通过 |
 | `{同目录}/xxx_fix.md` | 修复总结（执行记录、静态/动态检查发现、每轮改动） |
 
 ## 红线（修复时严禁的做法）
 
-在任何修复迭代中，**禁止**出现以下"替代式修复"——它们会让测试通过但背离 Triton on MLU 的目标：
+在任何修复迭代中，**禁止**出现以下"替代式修复"——它们会让测试通过但背离 Triton on NVIDIA GPU 的目标：
 
 1. ❌ 将 Triton kernel 改为 CPU 实现
 2. ❌ 用纯 PyTorch 算子替代原 Triton kernel 的计算
@@ -57,7 +59,7 @@ description: Triton Kernel 代码验证工具，负责对生成的 Triton kernel
 
 **执行契约**：首轮执行必须先确认当前工作流的 EnvConfig 产物，不允许直接猜测本地执行环境或 Worker。
 
-- 优先从 `input_code_path` 所在目录向上查找 `{output_dir}/EnvConfig/config.md`，读取其中的 `execution_backend`
+- 优先从 `input_code_path` 的父目录开始逐级向上查找最近的 `EnvConfig/config.md`，读取其中的 `execution_backend`
 - `execution_backend=local`：直接在本地执行环境执行
 - `execution_backend=worker`：通过 `submit_task_to_worker.py` 提交 Worker Task
 - EnvConfig 缺失或无法判断后端时，必须先回到 `mlu-triton-main` 的 EnvConfig 规则完成环境确认；不要把环境错误当作 kernel 错误修复
@@ -79,15 +81,16 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 ```
 
 **结果分类**：
-- `0` → 执行成功且精度断言通过 → 进入步骤 2a
-- `1` → 业务错误（Traceback / 精度不达标）→ 进入步骤 2b
-- `2` → 基础设施错误（输入路径不存在 / Worker 不可达等）→ **不要修改 kernel 代码**，先修 EnvConfig 或路径，终止本 Skill 并提示用户
+- `0` → 执行成功且测试脚本必须以断言/非零退出码表达精度失败 → 进入步骤 2a
+- Worker 脚本返回 `2` → 基础设施错误，**不要修改 kernel 代码**，先修 EnvConfig 或路径
+- 其他非零退出码（包括本地 Python 的 `2`）→ 先读 stderr：驱动、依赖或路径错误按环境错误终止；kernel traceback/精度断言按业务错误进入步骤 2b。不得只凭本地退出码数字判断类别
 
 ### 步骤 2a：原代码通过 —— 直接产出并结束
 
-1. 将原文件**原样拷贝**为 `{同目录}/xxx_fix.py`
-2. 在 `{同目录}/xxx_fix.md` 中写入"原代码已通过测试，无需修改"，并附首轮执行日志摘要
-3. 任务完成，退出流程
+1. 对原文件做只读的平台残留扫描；若发现 `MLU`/`Cambricon`/`torch_mlu`/`torch.mlu`/`is_mlu`/`tl.extra.mlu`，不得因退出码为 0 直接放行，转入步骤 2b。
+2. 无平台残留时，将原文件**原样拷贝**为 `{同目录}/xxx_fix.py`。
+3. 在 `{同目录}/xxx_fix.md` 中写入"原代码已通过测试，无需修改"，并附首轮执行日志摘要。
+4. 任务完成，退出流程。
 
 ### 步骤 2b：原代码失败 —— 进入静态检查
 
@@ -127,10 +130,10 @@ agent = spawn_agent(
     fixed_code_path: {xxx_fix.py 的绝对路径}
 
     严格按照任务文档执行：
-    - 必须遵守 mlu-triton-main 主 Skill 的运行环境选择规则：本地执行环境 MLU 可用时直接 `python xxx.py`，否则通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 提交 Worker Task
+    - 必须遵守 mlu-triton-main 主 Skill 的运行环境选择规则：本地执行环境 RTX 3090/CUDA 可用时直接 `python xxx.py`，否则通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 提交 Worker Task
     - 迭代时直接覆盖 xxx_fix.py，并在 xxx_fix.md 追加迭代记录
     - 遵守红线：严禁 CPU / PyTorch 替代 / 标量 kernel 修复
-    - 达到终止条件（通过 / 同类错误连续 2 次 / 最大 5 次迭代）即结束
+    - 达到终止条件（通过 / 完全相同错误连续 2 次 / 最大 5 次迭代）即结束
     - 所有结果通过文件传递，不向调用方返回摘要字符串
     """
 )
@@ -150,7 +153,7 @@ DynamicFixer 执行完后，`xxx_fix.py` 为最终代码、`xxx_fix.md` 已在�
   ↓
 [步骤3] 动态修复（DynamicFixer 子代理）
          内部循环：执行 xxx_fix.py ↔ 按错误分类改写，
-         终止条件：通过 / 同类错误连续 2 次 / 达到最大迭代 5 次
+         终止条件：通过 / 完全相同错误连续 2 次 / 达到最大迭代 5 次
   ↓
 最终产物：xxx_fix.py + xxx_fix.md（含静态检查 + 动态修复记录）
 ```

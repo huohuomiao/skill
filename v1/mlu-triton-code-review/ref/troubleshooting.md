@@ -1,6 +1,6 @@
 # Triton 通用故障排查与修复指南
 
-本文只保存可跨后端复用的 Triton 排错方法。MLU 的设备、Grid、NRAM、核心数和后端行为规则读取 `.claude/skills/share/mlu/references/platform-rules.md`。
+本文只保存可跨后端复用的 Triton 排错方法。RTX 3090 的设备、launch/grid、shared memory、寄存器、occupancy 和 CUDA 后端规则读取 `.claude/skills/share/gpu/references/platform-rules.md`。
 
 ## 精度问题
 
@@ -35,7 +35,7 @@ mask = (offsets < size) & (values > 0)
 1. 确认原语名称、参数和 Triton 版本一致。
 2. 确认目标后端支持该原语与 dtype。
 3. 避免在 Kernel 内使用普通 Python 动态对象或运行时不可解析的控制流。
-4. MLU 目标额外读取 `.claude/skills/share/mlu/references/primitives.md`。
+4. NVIDIA GPU 目标额外读取 `.claude/skills/share/gpu/references/primitives.md`。
 
 ## Kernel 接口不一致
 

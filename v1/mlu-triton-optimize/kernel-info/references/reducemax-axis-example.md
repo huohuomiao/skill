@@ -42,7 +42,7 @@ def max_wrapper(input):
 
 
 def test_max_wrapper():
-    inp = torch.randn((32, 128), dtype=torch.float32, device="mlu")
+    inp = torch.randn((32, 128), dtype=torch.float32, device="cuda")
     out = max_wrapper(inp)
     ref = torch.max(inp, dim=1).values
     torch.testing.assert_close(out, ref)
@@ -52,7 +52,7 @@ def test_max_wrapper():
 代表性测例：
 
 ```python
-inp = torch.randn((32, 128), dtype=torch.float32, device="mlu")
+inp = torch.randn((32, 128), dtype=torch.float32, device="cuda")
 ```
 
 根据 wrapper 中的 kernel launch，`x_ptr` 绑定到 wrapper 的 `input` 参数，在代表性测例中对应 `inp = torch.randn((32, 128), ...)`，contiguous 布局，因此真实 `shape` 是 `[32, 128]`，真实 `stride` 是 `[128, 1]`。
@@ -112,6 +112,8 @@ kernel 沿 N 轴分块求 max：`tl.max(x, axis=0)` 对 tile 内 N 维度做 red
 
 ```python
 reduced_axis_set = {"N"}
+```
+
 ## 输出
 
 ```json

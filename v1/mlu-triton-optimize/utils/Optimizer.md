@@ -72,7 +72,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 
 ## 优化策略执行步骤
 
-目标平台为 MLU 时，在读取具体策略前先读取 `.claude/skills/share/mlu/references/platform-rules.md`。若策略名称为 `libdevice-opt`，策略文档固定为 `.claude/skills/share/mlu/optimize/libdevice-opt.md`；其他策略继续使用调用方传入的文档路径。
+目标平台为 NVIDIA CUDA GPU；在读取具体策略前先读取 `.claude/skills/share/gpu/references/platform-rules.md`。若策略名称为 `libdevice-opt`，策略文档固定为 `.claude/skills/share/gpu/optimize/libdevice-opt.md`；其他策略继续使用调用方传入的文档路径。`mlu-triton-optimize` 与 `mlu-triton-main` 路径仅为兼容旧调用保留。
 
 ### 步骤 1：读取策略文档
 
@@ -120,6 +120,8 @@ Read {策略文档路径}
 
 **注意事项**：
 - 若策略使用原始代码，报告中需标注状态为`失败`，性能数据使用原始代码的数据（opt 值 = original 值，加速比 = 1.0）
+- 每轮先保留 `input.py` 的精度与性能基线；候选只有在精度通过且目标 RTX 3090 实测不回退时才写入 `triton_optimized.py`。无提升、回退、未能执行或基础设施错误时，输出代码必须回退为 `input.py`，不得把失败候选传给下一策略。
+- 深度优化各轮同样执行上述回退，因此“最后一轮输出”始终代表 best-so-far；若无法证明这一点，主流程应选择历史上最后一个明确通过且不回退的轮次。
 - 每个策略的报告块以 `---` 分隔线开头，便于主 agent 解析
 
 ---
@@ -137,6 +139,7 @@ Read {策略文档路径}
   2. 当前策略的 `strategy.md`
   3. 当前策略的 references 目录下的参考文档（若存在）
   4. 当前工作目录向上推断出的 `{output_dir}/EnvConfig/config.md`
+  5. `.claude/skills/share/gpu/` 下由当前策略明确引用的平台规则、原语、运行时和性能采集文件
 - **可以写入**以下文件：
   1. 当前工作目录下的文件
 - **禁止读取**以下文件：

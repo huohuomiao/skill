@@ -1,6 +1,6 @@
-# Triton 算子 autotune config 自动生成（MLU）
+# Triton 算子 autotune config 自动生成（CUDA GPU）
 
-先读取 `.claude/skills/share/mlu/references/platform-rules.md` 获取 MLU 硬件与运行时约束；本文件保留可复用的 autotune 装饰器生成和参数回写流程。
+先读取 `.claude/skills/share/gpu/references/platform-rules.md` 获取 CUDA 硬件、运行时和 RTX 3090（sm_86）特性约束；本文件保留可复用的 autotune 装饰器生成和参数回写流程。
 
 ## 职责概述
 
@@ -85,24 +85,20 @@
 
 #### 2.1 确定 blocksize
 
-首先根据 kernel 内容分析 nram 占用情况，生成一个 NRAM 预估函数 `estimate_nram`，输入为所有的 BLOCK_SIZE 加输入的 dtype 信息，输出是 NRAM 占用大小，要求：
-
-- **充分考虑到内存复用**，分析 kernel 中 tensor 的生命周期，避免简单地将所有 tensor 占用的内存加总
-- 不用考虑标量运算
-- 不考虑 mask 以及地址相关的计算
+先根据 kernel 内容生成保守的 tile 规模候选，但不使用静态张量大小冒充 CUDA 资源占用。对每个候选实际编译，记录 registers/thread、shared-memory/block、spilling 和理论 occupancy；这些编译结果才是资源裁剪依据。设备能力与采集接口统一从 `share/gpu` 读取。
 
 生成 block size 组合，原则如下：
 **必须严格遵守的原则**
 
 1. 当某个block size已经在 @triton.heuristics 被设置，那么在 auto tune 配置项中无需考虑此 block size。
-2. 所有 stride=1 的轴 的 block size 不能低于 128 Byte
-3. block size 设置为 2 的幂次或 32 的倍数，以更好地适配 MLU 硬件
+2. stride=1 轴优先让连续访问覆盖至少一个合并事务，但不得把 128 Byte 当作所有 dtype/算子的硬下限
+3. `tl.arange` 范围使用 Triton 支持的 2 的幂；其它 tile 维度优先从 16/32 的倍数中取值，并以编译和实测为准
 4. reduce 轴的 block size 配置选项要包含等于该轴的实测数据大小
 
 **block size 选取规则参考**
 
-1. **通过 `estimate_nram` 预估占用的 nram，生成的 block size 尽可能最大化利用 nram 空间（接近512KB）**
-2. 在 1 的基础上依据 step2 中提取的轴信息（`priority` 字段体现了 block size 的优先级，priority 越小，优先级越高），**优先级越高的轴越适合设置较大的 block size 来充分利用内存带宽，所以高优先级轴的block size可以调大，优先级低的轴可以适当调小**
+1. 从小到大生成 BLOCK 候选并逐项编译，剔除 shared-memory/寄存器超限、明显 spilling 或 occupancy 过低的组合；不要追求填满某个固定片上内存数值
+2. 依据轴信息（`priority` 越小优先级越高），高优先级连续轴可尝试较大 block，低优先级轴保持较小以控制寄存器和 shared-memory 压力
 3. 限制 block size 组合总数在合理范围内（不超过 30 个），以避免过长的编译时间，其中优先级高的轴配置选项可以少一些，优先级低的轴配置项可以多一些
 
 #### 2.2 确定 num_warps 和 num_stages
@@ -115,18 +111,20 @@
 - 是否存在 persistent loop：对于 step2 中的结果，**只对于 axis type 为 "PARALLEL" 的轴，has_loop 为 True 则说明存在 persistent loop**；否在不存在
 - 是否有对输入tensor做升位宽操作（如 float16 升位 float32）或者 transpose 操作
 
-根据上述结果，然后按照下表确定 num_stages 和 num_warps 的候选值：
+根据上述结果生成 RTX 3090（sm_86）候选。loop 只用于描述结构，不直接决定流水收益：
 
 | 瓶颈 | 是否有persistent loop | 输入是否有升位宽/trans 操作 | `num_stages` 候选 | `num_warps` 候选 | 说明 |
 |:---:|:--------------:|:------------------------:|:----------------:|:----------------:|-----|
-| 计算 |      有        |           有             |   `[1, 3, 4]`    |     `[1, 4]`     | 并行轴上开启流水选项，计算瓶颈下，开启 num_warps=4 选项可以使输入的升位宽/transpose 可以走mv流|
-| 计算 |      有        |           无             |   `[1, 3]`       |     `[1]`        | 并行轴上开启流水选项 |
-| 计算 |      无        |           有             |     `[1]`        |     `[1]`        | 并行轴上没有循环，不开启流水选项 |
-| 计算 |      无        |           无             |     `[1]`        |     `[1]`        | 并行轴上没有循环，不开启流水选项 |
-| io  |      有        |           有             |   `[1, 3]`       |     `[1]`        | 并行轴上开启流水选项 |
-| io  |      有        |           无             |   `[1, 3]`       |     `[1]`        | 并行轴上开启流水选项 |
-| io  |      无        |           有             |     `[1]`        |     `[1]`        | 并行轴上没有循环，不开启流水选项 |
-| io  |      无        |           无             |     `[1]`        |     `[1]`        | 并行轴上没有循环，不开启流水选项 |
+| 计算 |      有        |           有             |   `[2,3,4]`      |     `[4,8]`      | 编译后按寄存器、shared memory、occupancy 裁剪 |
+| 计算 |      有        |           无             |   `[2,3,4]`      |     `[4,8]`      | `tl.dot` 流水候选必须实测 |
+| 计算 |      无        |           有             |   `[2,3,4]`      |     `[4,8]`      | 不因无 loop 禁用 CUDA 软件流水候选 |
+| 计算 |      无        |           无             |   `[2,3,4]`      |     `[4,8]`      | 以编译资源与耗时选优 |
+| io  |      有        |           有             |   `[2,3]`        |     `[2,4,8]`    | 检查访存吞吐与 occupancy |
+| io  |      有        |           无             |   `[2,3]`        |     `[2,4,8]`    | persistent 仅作为实测候选 |
+| io  |      无        |           有             |   `[2,3]`        |     `[2,4,8]`    | 常规 CUDA launch，不限制到 SM 数 |
+| io  |      无        |           无             |   `[2,3]`        |     `[2,4,8]`    | 常规 CUDA launch，不限制到 SM 数 |
+
+RTX 3090 不支持 FP8 Tensor Core 路径、TMA、thread-block cluster 或 Hopper 专属配置；禁止生成这些候选。`num_warps=1` 不是本目标平台的默认值，仅在已有代码实测证明时作为兼容候选保留。
 
 #### 2.3 整合配置项
 
@@ -143,10 +141,10 @@
   @triton.autotune(
     configs=[
         triton.Config({'BLOCK_M': bm, 'BLOCK_N': bn}, num_stages=s, num_warps=w)
-        for bm in [128, 64, 32]
-        for bn in [256, 128, 64]
-        for s in [1, 3]
-        for w in [1]
+        for bm in [32, 64, 128]
+        for bn in [64, 128, 256]
+        for s in [2, 3, 4]
+        for w in [2, 4, 8]
     ],
     key=['M', 'N'],
     restore_value=[...],
@@ -177,7 +175,7 @@
     ...,
     M, N,
     BLOCK_M: tl.constexpr,
-    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
     num_blocks_m: tl.constexpr,
     num_blocks_n: tl.constexpr,
     num_programs: tl.constexpr,
@@ -187,13 +185,11 @@
     ...
     BLOCK_M = 128
     BLOCK_N = 256
-    num_warps = 1
+    num_warps = 4
     num_blocks_m = triton.cdiv(M, BLOCK_M)
     num_blocks_n = triton.cdiv(N, BLOCK_N)
-    core_num = torch.mlu.get_device_properties(0).multi_processor_count
-    MAX_GRID_SIZE = core_num // num_warps
-    grid = (min(num_blocks_m * num_blocks_n, MAX_GRID_SIZE), )
-    triton_kernel[grid](..., BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, num_blocks_m=num_blocks_m, num_blocks_n=num_blocks_n, num_programs=grid[0],num_warps=num_warps,)
+    grid = (num_blocks_m * num_blocks_n, )
+    triton_kernel[grid](..., BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, num_blocks_m=num_blocks_m, num_blocks_n=num_blocks_n, num_programs=grid[0], num_warps=num_warps)
 
   # 修改后的 kernel 及 wrapper 函数
   @triton.autotune(
@@ -204,33 +200,33 @@
     ...,
     M, N,
     BLOCK_M: tl.constexpr,
-    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
   ):
     num_blocks_m = (M + BLOCK_M - 1) // BLOCK_M
     num_blocks_n = (N + BLOCK_N - 1) // BLOCK_N
-    num_programs = tl.num_programs(0)
+    flat_pid = tl.program_id(0)
     ...
   def wrapper(...):
     ...
-    core_num = torch.mlu.get_device_properties(0).multi_processor_count
-    grid = lambda META: (min(triton.cdiv(M, META['BLOCK_M']) * triton.cdiv(N, META['BLOCK_N']), core_num // META['num_warps']), )
+    grid = lambda META: (triton.cdiv(M, META['BLOCK_M']) * triton.cdiv(N, META['BLOCK_N']), )
     triton_kernel[grid](...)
   ```
 
 **改动**：
 1. 在 wrapper 函数中删除了 BLOCK_M, BLOCK_N 的赋值和传参
-2. grid 参数 "num_blocks_m * num_blocks_n" 依赖于 BLOCK_M, BLOCK_N 的数值，所以改为通过 lambda 函数动态计算；"MAX_GRID_SIZE" 依赖 num_warps 的数值，也通过 lambda 动态获取
-3. num_blocks_m, num_blocks_n, num_programs 的传参依赖 BLOCK_M, BLOCK_N，num_warps，也删除，改为在 kernel 内部以相同的计算流计算。
+2. grid 参数 `num_blocks_m * num_blocks_n` 依赖 BLOCK_M、BLOCK_N，所以改为 lambda 动态计算；普通 CUDA kernel 保留全部逻辑 program，不按 SM 数封顶
+3. num_blocks_m、num_blocks_n 的传参依赖 BLOCK_M、BLOCK_N，删除后在 kernel 内以同一计算流恢复。只有明确生成 persistent 候选时才使用 `tl.num_programs(0)` 循环覆盖任务，并在候选编译后按寄存器/shared-memory occupancy 计算驻留 grid
 
 ### Step 4: 生成单一最优配置
 
 1. 开启环境变量 `TRITON_PRINT_AUTOTUNING` 并运行生成的代码
 2. 若精度有错误，请根据错误信息进行调试修改；若精度无误，提取 best_config 信息，并将 @triton.autotune 中的配置项组合缩减为单一最优配置
 3. 再次运行生成代码，若精度有错误，请根据错误信息进行调试修改；若精度无误，输出最终代码
+4. 若前序 `modify-grid` 只记录了 persistent 候选，则以此处冻结的 config 读取编译后 registers/shared memory/threads，按 `modify-grid/strategy.md` 重新计算 occupancy；仅在补齐 `tl.num_programs(0)` grid-stride coverage 且 RTX 3090 A/B 实测稳定更快时采用 persistent 版本，否则保留普通完整 Grid。
 
 ## 关键约束与边界条件
 
 | 约束项 | 规则 |
 |--------|------|
-| NRAM 上限 | 512 KB（524288 bytes）参考值；运行时通过 `max_nram_size` 动态获取实际值 |
-| block size 上限 | 65536（`MAX_BLOCK_SIZE`） |
+| CUDA 资源 | 逐候选编译并读取 registers、shared memory、spilling、occupancy；硬件属性转读 `share/gpu` |
+| RTX 3090 特性 | 禁止 FP8、TMA、cluster、Hopper 专属路径；warps 常用 2/4/8，dot stages 实测 2/3/4 |

@@ -57,8 +57,8 @@ def _parse_args():
                    help="the exact command Worker will execute verbatim")
     p.add_argument(
         "--device-type",
-        default=os.environ.get("TRITON_DEVICE_TYPE", "mlu590"),
-        help="Worker device type; defaults to $TRITON_DEVICE_TYPE or mlu590",
+        default=os.environ.get("TRITON_DEVICE_TYPE", "rtx3090"),
+        help="Worker device type; defaults to $TRITON_DEVICE_TYPE or rtx3090",
     )
     p.add_argument("--job-id", default=None,
                    help="override $JOB_ID")

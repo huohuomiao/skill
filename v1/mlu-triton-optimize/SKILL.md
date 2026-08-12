@@ -1,13 +1,15 @@
 ---
 name: mlu-triton-optimize
-description: Cambricon MLU 上 Triton 算子性能优化专家，当用户提及“针对MLU优化”以及“Triton算子”等相关关键词时才调用该SKILL
+description: NVIDIA CUDA GPU（重点适配 RTX 3090 / sm_86）上的 Triton 算子性能优化专家；沿用 mlu-triton-optimize 名称以兼容原调用，当用户要求 GPU、CUDA、RTX 3090 或 Triton 算子优化时调用
 ---
 
 # mlu-triton-optimize
 
 ## 概述
 
-该 SKILL 是 Cambricon MLU 上的 Triton 算子性能优化专家，目标是使用多种优化策略组合来提升 Triton 算子性能。
+该 SKILL 是 NVIDIA CUDA GPU 上的 Triton 算子性能优化专家，重点适配 RTX 3090（sm_86）。目录名、Skill 名和 `/mlu-triton-optimize` 命令仅作为旧版兼容标识保留，不代表 MLU 执行语义。
+
+执行任何策略前先读取 `.claude/skills/share/gpu/references/platform-rules.md`；设备探测、硬件上限、CUDA 特性门控和 profiler 入口均以 `share/gpu` 为唯一事实源，禁止在本 Skill 内硬编码硬件细节。
 
 **核心目标**：在保证精度无损的前提下，将指定的 Triton 算子性能提升到最优。
 
@@ -41,16 +43,16 @@ description: Cambricon MLU 上 Triton 算子性能优化专家，当用户提及
 
 ### 步骤 2：开箱性能优化（Out-of-Box Performance Optimization）
 
-开箱性能优化：基于 Triton MLU 异构迁移经验，采用结构化匹配方式，将 Triton 代码优化为 MLU 友好的代码，追求用最小的代价获得性能不错的 Triton MLU 代码。
+开箱性能优化：基于 Triton CUDA 优化经验，采用结构化匹配方式，将 Triton 代码优化为 NVIDIA GPU 友好的代码，追求用最小代价获得性能良好的 RTX 3090 Triton 代码。
 
-开箱性能优化不过分关注性能提升，部分优化对性能无直接收益甚至性能回退，但确是进行后续优化的关键步骤。
+开箱性能优化不过分追求单步收益，但每个策略仍须在统一测试阶段验证；无收益或回退的候选必须恢复该策略输入，不能把回退带入下一步。
 
 以下为所有的开箱性能优化策略：
-| 序号 | 策略 | 策略名称 | 说明  | 是否必须生效 |
+| 序号 | 策略 | 策略名称 | 说明  | 是否必须执行 |
 |--------|------|-------------|------|------------------|
 | 1 | 分块优化 | `retiling` | 分析 Triton kernel 代码，优化归约轴和并行轴的分块方案 | 否 |
 | 2 | 归约优化 | `reduce-opt` | 分析 Triton kernel 代码，对包含 reduce 类算子的 kernel 进行优化 | 否 |
-| 3 | Grid 优化 | `modify-grid` | 将多维 grid 改写为一维、不超过硬件物理核心数的形式 | 是 |
+| 3 | Grid 优化 | `modify-grid` | 保留普通 CUDA launch 并按需展平；仅对实测有益的 persistent 候选按编译后 occupancy 限流 | 是 |
 | 4 | 索引计算简化 | `index-computation-simplify` | 消除 load/store 地址计算中的冗余计算 | 否 |
 | 5 | 自动调优配置生成 | `gen-autotune-config` | 分析可调优的配置轴，生成带有单一最优配置项 autotune 的代码 | 是 |
 
@@ -100,7 +102,7 @@ agent = spawn_agent(
    - `{工作目录}/triton_optimized.py`（优化后代码）
    - `{工作目录}/triton_optimized.md`（优化报告）
 
-若任一文件缺失，则重新调用 `当前优化策略` 的 subagent，最多重试 2 次。若重试后仍未生成，则标记该策略为失败，将 `{当前优化策略工作目录}/input.py` 复制为 `{当前优化策略工作目录}/triton_optimized.py`。
+若任一文件缺失，则重新调用 `当前优化策略` 的 subagent，最多重试 2 次。若重试后仍未生成，则标记该策略为失败，将 `{当前优化策略工作目录}/input.py` 复制为 `{当前优化策略工作目录}/triton_optimized.py`，并生成最小 `triton_optimized.md`，明确 `status=failed`、`accuracy_pass=N/A`、`performance=N/A` 与真实失败原因，保证汇总链不断。
 
 6. 第 5 步验证通过后，继续进行下一轮优化策略，直至所有优化策略顺序执行完毕。
 
@@ -132,7 +134,7 @@ agent = spawn_agent(
 
 |      策略      |     策略名称     |                            说明                            |
 |---------------|-----------------|------------------------------------------------------------|
-| Libdevice 优化 | `libdevice-opt` | 使用 Cambricon libdevice 高效算子替换低效计算模式（fast_* 优先） |
+| Libdevice 优化 | `libdevice-opt` | 使用官方 `triton.language.extra.libdevice` 或标准 `tl` 原语替换低效计算模式 |
 | Config 微调    | `config-tuner`  | 通过调整 block size，num_stages，num_warps 等参数进行性能调优   |
 | 除法指令优化 | `div-to-mul` | 将除法指令修改为乘倒数 |
 
@@ -181,10 +183,10 @@ agent = spawn_agent(
 
 先解析策略文档路径：
 
-- `libdevice-opt`：`.claude/skills/share/mlu/optimize/libdevice-opt.md`
+- `libdevice-opt`：`.claude/skills/share/gpu/optimize/libdevice-opt.md`
 - 其他策略：`.claude/skills/mlu-triton-optimize/{本轮优化策略名称}/strategy.md`
 
-所有 MLU 策略还必须读取 `.claude/skills/share/mlu/references/platform-rules.md`。
+所有 CUDA GPU 策略还必须读取 `.claude/skills/share/gpu/references/platform-rules.md`。RTX 3090 禁用 FP8、TMA、thread-block cluster 以及仅 Hopper 可用的路径。
 
 ```python
 agent = spawn_agent(
@@ -239,8 +241,8 @@ agent = spawn_agent(
 ### 步骤 4：优化输出
 
 1. 确定最终代码：
-   - 若步骤 3 有执行，使用 `{output_dir}/Optimizer/triton_oob_optimized.py`
-   - 若步骤 3 被跳过，使用 `{output_dir}/Optimizer/triton_advanced_optimized.py`
+   - 若步骤 3 有执行，使用 `{output_dir}/Optimizer/triton_advanced_optimized.py`
+   - 若步骤 3 被跳过，使用 `{output_dir}/Optimizer/triton_oob_optimized.py`
    - 若上述代码均缺失，则使用步骤 1 的原始输入代码
 2. 将最终代码复制到 `{output_dir}/Optimizer/triton_optimized.py` 中作为输出代码
 3. 读取各阶段汇总报告（`triton_oob_optimized.md`、`triton_advanced_optimized.md`），合并生成全局汇总报告 `{output_dir}/Optimizer/triton_optimized.md`

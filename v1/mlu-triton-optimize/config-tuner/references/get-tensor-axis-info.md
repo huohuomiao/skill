@@ -1,4 +1,4 @@
-# MLU Triton kernel 获取 tensor 轴信息详解
+# CUDA Triton kernel 获取 tensor 轴信息详解
 
 本文档提供了获取 Triton kernel 中所有 tensor 轴信息的详细方法和示例。
 
@@ -118,7 +118,7 @@ def test1(inp):
     return mid
 
 def run_test1():
-    inp = torch.randn((4096, ), dtype=torch.float32, device='mlu')
+    inp = torch.randn((4096, ), dtype=torch.float32, device='cuda')
     return test1(inp)
 ```
 
@@ -172,18 +172,17 @@ def test_kernel_2(
 
 def test2(x: torch.Tensor, y: torch.Tensor):
     output = torch.empty_like(x)
-    assert x.is_mlu and y.is_mlu and output.is_mlu
+    assert x.is_cuda and y.is_cuda and output.is_cuda
     n_elements = output.numel()
-    core_num = torch.mlu.get_device_properties().multi_processor_count
-    grid = lambda meta: (min(triton.cdiv(n_elements, meta['BLOCK_SIZE']), core_num), )
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']), )
     add_kernel[grid](x, y, output, n_elements)
     return output
 
 def run_test2():
-    x = torch.randn((4096, ), dtype=torch.float32, device='mlu')
-    y = torch.randn((4096, ), dtype=torch.float32, device='mlu')
+    x = torch.randn((4096, ), dtype=torch.float32, device='cuda')
+    y = torch.randn((4096, ), dtype=torch.float32, device='cuda')
     return test2(x, y)
-    ```
+```
 
 **返回：**
 ```python
@@ -272,7 +271,7 @@ def test3(inp, dim=None):
     return out
 
 def run_test3():
-    inp = torch.randn((4096, 2048), dtype=torch.float32, device='mlu')
+    inp = torch.randn((4096, 2048), dtype=torch.float32, device='cuda')
     return test3(inp, 1)
 ```
 
@@ -355,12 +354,11 @@ def test_kernel4(
 def test4(input: torch.Tensor) -> torch.Tensor:
     N, H, W = input.shape
     output = torch.empty((N, H, W), dtype=input.dtype, device=input.device)
-    core_num = torch.mlu.get_device_properties(0).multi_processor_count
     num_blocks_n = triton.cdiv(N, BLOCK_N)
     num_blocks_h = triton.cdiv(H, BLOCK_H)
     num_blocks_w = triton.cdiv(W, BLOCK_W)
     total_blocks = num_blocks_n * num_blocks_w * num_blocks_h
-    grid = (min(total_blocks, core_num),)
+    grid = (total_blocks,)
     trans_relu_3d_kernel[grid](
         input_ptr=input,
         output_ptr=output,
@@ -380,7 +378,7 @@ def test4(input: torch.Tensor) -> torch.Tensor:
     return output
 
 def run_test4():
-    inp = torch.randn((32, 64，256), dtype=torch.float32, device='mlu')
+    inp = torch.randn((32, 64, 256), dtype=torch.float32, device='cuda')
     return test4(inp)
 
 ```

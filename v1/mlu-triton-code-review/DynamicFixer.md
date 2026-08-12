@@ -28,7 +28,7 @@ DynamicFixer 负责对经过静态检查后的 Triton kernel 代码进行**动�
 
 ## 红线（修复时严禁的做法）
 
-在任何迭代中，**禁止**出现以下"替代式修复"——它们会让测试通过但背离 Triton on MLU 的目标：
+在任何迭代中，**禁止**出现以下"替代式修复"——它们会让测试通过但背离 Triton on NVIDIA GPU 的目标：
 
 1. ❌ 将 Triton kernel 改为 CPU 实现
 2. ❌ 用纯 PyTorch 算子替代原 Triton kernel 的计算
@@ -38,7 +38,7 @@ DynamicFixer 负责对经过静态检查后的 Triton kernel 代码进行**动�
 
 ## 执行契约
 
-本子代理必须遵守 `mlu-triton-main` 的 EnvConfig 环境选择结果，**本地执行环境有可用 MLU 环境时优先本地执行**。禁止无条件提交 Worker Task。
+本子代理必须遵守 `mlu-triton-main` 的 EnvConfig 环境选择结果，**本地执行环境有可用 RTX 3090/CUDA 时优先本地执行**。禁止无条件提交 Worker Task。
 
 ### 执行后端选择
 
@@ -65,11 +65,11 @@ python <code_path>
 **结果分类**（以本地执行命令退出码为准）：
 - `0` → 执行成功 → 按步骤 1 继续判定精度
 - 非 `0` → 业务错误（Traceback / 精度不达标）→ 进入迭代修复
-- 环境不可用类错误（如 MLU 不可用、Triton/torch_mlu 缺失，且 EnvConfig 未确认 local）→ **不要修改 kernel 代码**，在 `xxx_fix.md` 中记录环境错误并终止
+- 环境不可用类错误（如 CUDA/RTX 3090 不可用、NVIDIA 驱动或 Triton 缺失，且 EnvConfig 未确认 local）→ **不要修改 kernel 代码**，在 `xxx_fix.md` 中记录环境错误并终止
 
 ### Worker 执行方式
 
-仅当 `execution_backend=worker`，或 EnvConfig 已确认本地执行环境 MLU 不可用且 Worker 环境可用时，才通过 `submit_task_to_worker.py` 提交 Worker Task。每次调用必须前台同步执行，等待脚本退出后再判断结果；禁止 `&` 后台、禁止并发提交多个 Worker Task：
+仅当 `execution_backend=worker`，或 EnvConfig 已确认本地 RTX 3090/CUDA 不可用且 Worker 环境可用时，才通过 `submit_task_to_worker.py` 提交 Worker Task。每次调用必须前台同步执行，等待脚本退出后再判断结果；禁止 `&` 后台、禁止并发提交多个 Worker Task：
 
 ```bash
 python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py \
@@ -90,7 +90,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 
 ### 步骤 1：执行静态修复后的代码
 
-按上文"执行契约"选择本地执行环境或 Worker 运行 `xxx_fix.py`。本地执行环境 MLU 可用时必须优先本地执行；只有 EnvConfig 判定本地执行环境不可用且 Worker 可用时，才提交 Worker Task。
+按上文"执行契约"选择本地执行环境或 Worker 运行 `xxx_fix.py`。本地执行环境 RTX 3090/CUDA 可用时必须优先本地执行；只有 EnvConfig 判定本地执行环境不可用且 Worker 可用时，才提交 Worker Task。
 
 - **通过**（执行成功且精度断言达标）→ 在 `xxx_fix.md` 末尾追加"静态修复后已通过"的执行摘要，结束流程
 - **业务错误**（Traceback / 精度不达标）→ 进入步骤 2
@@ -101,20 +101,20 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 基于运行时报错信息（后续可扩展 coredump 解析，当前阶段只解析报错）分析根因，按以下策略修改 `xxx_fix.py`。
 #### 2.1 错误分类与修复索引
 
-通用错误查阅 `.claude/skills/mlu-triton-code-review/ref/troubleshooting.md`；MLU 专属错误同时查阅 `.claude/skills/share/mlu/references/platform-rules.md`、共享原语清单和 Libdevice 文档：
+通用错误查阅 `.claude/skills/mlu-triton-code-review/ref/troubleshooting.md`；RTX 3090/CUDA 专属错误同时查阅 `.claude/skills/share/gpu/references/platform-rules.md`、共享原语清单和 Libdevice 文档：
 
 | 错误类型 | 典型特征 | 详细方案 |
 |---------|--------|---------|
-| **Grid 超限** | `Hardware limit: 65535`、`UINT16_MAX` | `share/mlu/references/platform-rules.md` 的 Grid 规则 |
-| **NRAM 溢出** | `NRAM, Required: X`、`nram overflow` | `share/mlu/references/platform-rules.md` 的 NRAM 规则 |
+| **Launch/Grid 超限** | `invalid argument`、grid dimension 超限 | `share/gpu/references/platform-rules.md` 的 launch 规则 |
+| **资源/Occupancy 不足** | `OutOfResources`、shared memory/register 超限 | `share/gpu/references/platform-rules.md` 的资源规则 |
 | **精度问题** | `allclose=False`、`max_diff` 超阈值、NaN/Inf | 通用 troubleshooting 的精度章节 |
-| **编译错误** | `compilation failed`、未知原语 | 通用 troubleshooting + `share/mlu/references/primitives.md` |
-| **设备/平台错误** | `cuda is not available` 等 | `share/mlu/references/platform-rules.md` 的运行时规则 |
+| **编译错误** | `compilation failed`、未知原语 | 通用 troubleshooting + `share/gpu/references/primitives.md` |
+| **设备/平台错误** | `CUDA is not available`、驱动/架构不匹配 | `share/gpu/references/platform-rules.md` 的运行时规则 |
 | **Kernel 接口错误** | `unexpected keyword`、引用未传入的模块级常量 | 通用 troubleshooting 的接口章节 |
 | **数据类型错误** | `dtype mismatch`、`int64 is not supported` | 通用 troubleshooting + 共享原语清单 |
-| **libdevice 错误** | `tl.extra.mlu.libdevice.xxx` 相关 | `share/mlu/references/libdevice.md` |
+| **libdevice 错误** | GPU libdevice 调用、签名或 dtype 不匹配 | `share/gpu/references/libdevice.md` |
 | **内存越界** | `illegal memory access`、`out of bounds` | 通用 troubleshooting 的访存章节 |
-| **MLU 行为差异** | 无报错但行为异常 | `share/mlu/references/platform-rules.md` |
+| **CUDA 行为差异** | 无报错但行为异常 | `share/gpu/references/platform-rules.md` |
 
 #### 2.2 修复原则
 

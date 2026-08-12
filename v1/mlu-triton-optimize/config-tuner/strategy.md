@@ -1,6 +1,6 @@
 # Config-Tuner
 
-MLU 的 NRAM、核心数、Grid、`num_warps` 和 `num_stages` 约束统一读取 `.claude/skills/share/mlu/references/platform-rules.md`；本文件保留通用调参流程。
+CUDA 的 shared memory、寄存器、occupancy、Grid、`num_warps` 和 `num_stages` 约束统一读取 `.claude/skills/share/gpu/references/platform-rules.md`；本文件只保留通用调参流程。
 
 ## 职责概述
 
@@ -61,24 +61,22 @@ MLU 的 NRAM、核心数、Grid、`num_warps` 和 `num_stages` 约束统一读�
 - 是否存在 persistent loop：对于 step1 中的汇总结果，**只对于 axis type 为 "PARALLEL" 的轴，has_loop 为 True 则说明存在 persistent loop**；否在不存在
 - 是否有对输入tensor做升位宽操作（如 float16 升位 float32）或者 transpose 操作
 
-根据上述结果，然后按照下表确定 num_stages 和 num_warps 的候选值：
-| 瓶颈 | 是否有persistent loop | 输入是否有升位宽/trans 操作 | [`num_stages`,`num_warps`] 候选 | 说明 |
-|:---:|:--------------:|:------------------------:|:----------------:|-----|
-| 计算 |      有        |           有             |   `[3, 1]、[4, 4]` | 并行轴上开启流水选项，计算瓶颈下，开启 num_warps=4 选项可以使输入的升位宽/transpose 可以走mv流|
-| 计算 |      有        |           无             |   `[3, 1]`         | 并行轴上开启流水选项 |
-| 计算 |      无        |           有             |   `[1, 1]`         | 并行轴上没有循环，不开启流水选项 |
-| 计算 |      无        |           无             |   `[1, 1]`         | 并行轴上没有循环，不开启流水选项 |
-| io  |      有        |           有             |   `[3, 1]`         | 并行轴上开启流水选项 |
-| io  |      有        |           无             |   `[3, 1]`         | 并行轴上开启流水选项 |
-| io  |      无        |           有             |   `[1, 1]`         | 并行轴上没有循环，不开启流水选项 |
-| io  |      无        |           无             |   `[1, 1]`         | 并行轴上没有循环，不开启流水选项 |
+在 RTX 3090（sm_86）上以 `num_warps ∈ {2,4,8}` 为常见候选；包含 `tl.dot`/软件流水的 kernel 实测 `num_stages ∈ {2,3,4}`，简单 pointwise/reduce 先以 `num_stages=2` 为基线，再按编译结果裁剪。不要根据“是否有 loop”直接断言流水收益。
+
+| 场景 | `num_stages` 候选 | `num_warps` 候选 | 裁剪依据 |
+|:---|:---:|:---:|:---|
+| `tl.dot` / 多级加载 | `[2,3,4]` | `[4,8]` | 编译后的寄存器、shared memory 与 occupancy |
+| pointwise / 常规 reduce | `[2,3]` | `[2,4,8]` | NCU 吞吐、延迟、occupancy 与真实耗时 |
+| persistent 候选 | `[2,3,4]` | `[2,4,8]` | 必须先编译，再由每个 SM 的可驻留 block 数限制 grid |
+
+禁止为 RTX 3090 生成 FP8、TMA、thread-block cluster 或 Hopper 专属配置。候选是否保留只由同输入、同计时方法的精度与实测性能决定。
 
 ## Step 3：Try 出最优 BLOCK_SIZE
 
 **BLOCK_SIZE 微调方向**：
 
-- NRAM 占用率低时，尝试调大 block size，当存在多个调优轴时，高优先级轴优先
-- NRAM 超限时（即遇到 `OutOfResources: out of resource: NRAM, Required: XX, Hardware limit: XX` 错误），适当调小 block size，当存在多个调优轴时，低优先级轴优先
+- 寄存器或 shared memory 压力低且并行度充足时，可尝试调大 block size；存在多个调优轴时，高优先级轴优先
+- 遇到 `OutOfResources`、寄存器 spilling、shared-memory 超限或 occupancy 过低时，先调小低优先级轴的 block size，再评估降低 `num_stages` 或 `num_warps`
 
 **BLOCK_SIZE 约束说明**：
 
@@ -88,7 +86,7 @@ MLU 的 NRAM、核心数、Grid、`num_warps` 和 `num_stages` 约束统一读�
 
 按照以上说明，try 出最优配置，要求如下：
 
-- num_warps 与 num_stages 已确定，原则上不能再更改，若 Step 2 更改 num_warps 与 num_stages 造成了 NRAM 超限问题，则适当调低 BLOCK_SIZE 大小
+- `num_warps`、`num_stages` 与 BLOCK_SIZE 是耦合参数；若编译后资源占用超限或 occupancy 明显降低，可在 10 次预算内联合调整，不得只靠静态内存估算锁死参数
 - 精度测试通过是底线，任何精度测试不通过的尝试都为无效尝试
 - 最大尝试次数为 10 次
 - 清理try最优配置过程中产生的临时文件

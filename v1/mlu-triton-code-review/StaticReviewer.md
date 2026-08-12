@@ -2,7 +2,7 @@
 
 ## 职责概述
 
-StaticReviewer 负责对生成的 Triton kernel 代码进行**静态检查**，验证代码是否符合 MLU Triton 的 API 约束。仅做静态分析：只通过阅读代码发现问题，不涉及编译期/运行时，生成修复后的代码文件与修复总结。
+StaticReviewer 负责对生成的 Triton kernel 代码进行**静态检查**，验证代码是否符合 NVIDIA GPU/CUDA Triton 的 API 约束。仅做静态分析：只通过阅读代码发现问题，不涉及编译期/运行时，生成修复后的代码文件与修复总结。
 
 ## 输入
 
@@ -31,11 +31,13 @@ StaticReviewer 负责对生成的 Triton kernel 代码进行**静态检查**，�
 
 按以下两步**依次**执行（先存在性检查，再数据类型检查）：
 
-1. **存在性检查**：对照 `.claude/skills/share/mlu/references/primitives.md`，确认代码中使用的每个 Triton 原语是否**存在于** MLU Triton 支持清单中。
-   - 若原语不在清单中 → 标记为"不支持的原语"，建议替换或改写实现。
+1. **存在性检查**：先对照 `.claude/skills/share/gpu/references/primitives.md`；它是平台门禁而非完整 API 快照。
+   - 文档明确禁用的原语 → 标记为"不支持的原语"，建议替换或改写实现。
+   - 清单未提及的原语 → 标记为"待当前 Triton 版本编译确认"，不得仅因未列出就删除或改写。
 
-2. **数据类型适配检查**：对于已在清单中的原语，核对其操作的数据类型是否在共享原语清单标注的**支持范围**内。
-   - 若 dtype 不在支持范围 → 标记为"数据类型不适配"，建议按 semantic.md 中的可选 dtype 调整。
+2. **数据类型适配检查**：对共享文档已明确给出 dtype 门禁的原语核对其数据类型。
+   - 明确不支持 → 标记为"数据类型不适配"并按共享原语文档调整。
+   - 文档未覆盖 → 只记录"待编译确认"，交给 DynamicFixer 在目标环境验证。
 
 ### 步骤 2：检查代码中是否存在常见错误
 
@@ -45,23 +47,26 @@ StaticReviewer 负责对生成的 Triton kernel 代码进行**静态检查**，�
 | :------------------ | :-------------------------------------------- | :--------------------------- | :-------------------------------------- |
 | **1. 参数重定义**   | 在 `configs` 定义了参数又在 Kernel 内手动赋值 | 编译失败或 Autotune 失效     | 内部仅声明 `tl.constexpr`，不赋值       |
 | **2. 接口不一致**   | Launch 传参个数/顺序与 Kernel 定义不符        | `TypeError` 或内存访问错乱   | 严格核对，建议关键字传参                |
-| **3. 平台残留**     | 代码中保留 `cuda` 关键字或环境                | MLU 环境无法识别设备         | 全量替换 `cuda` -> `mlu`                |
+| **3. 平台残留**     | 保留 `MLU`/`Cambricon`/`torch_mlu`/`torch.mlu`/`is_mlu`/`tl.extra.mlu` | CUDA 环境无法执行 | 按 `share/gpu` 规则改为 CUDA API/原语 |
 | **4. 外部算 Block** | 在 Launch 参数位传入 `cdiv` 计算结果          | 逻辑混乱，违背并行架构设计   | 内部使用 `tl.program_id` 自行分块       |
 | **5. 缺少 Mask**    | `load/store` 不带边界判定                     | **内存越界 (Out of Bounds)** | 始终计算 `mask = offsets < size`        |
 | **6. 基址缺失**     | 计算偏移忘记加 `pid * BLOCK_SIZE`             | 所有计算块重复处理第一块数据 | `offsets = base + pid * BLOCK + arange` |
 
+其中 `cuda`、`torch.cuda`、`is_cuda` 是目标后端的正确写法，**不得**作为平台残留修复。
+
 ### 步骤 3：检查代码中 libdevice 算子的计算模式是否适配
 
-- 首先识别代码中是否存在 libdevice 算子：
+- 首先按 GPU 共享规则识别代码中是否存在 libdevice 算子；`tl.extra.mlu` 属于必须修复的平台残留：
 
   ```python
-  tl.extra.mlu.libdevice.op
+  from triton.language.extra import libdevice
+  value = libdevice.op(value)
   ```
 
   符合上述调用方式则判定为使用了 libdevice 算子。
 
-- 若存在上述算子，则参照 `.claude/skills/share/mlu/references/libdevice.md` 找到对应算子的描述并检查使用是否合规。
-- 对 Grid、NRAM、设备关键字或 MLU 后端行为的检查，读取 `.claude/skills/share/mlu/references/platform-rules.md`。
+- 若存在上述算子，则参照 `.claude/skills/share/gpu/references/libdevice.md` 找到对应算子的描述并检查使用是否合规。
+- 对 launch/grid、shared memory、寄存器、occupancy、设备关键字或 CUDA 后端行为的检查，读取 `.claude/skills/share/gpu/references/platform-rules.md`。
 
 - 若不存在，则跳过此检查。
 
@@ -75,7 +80,7 @@ StaticReviewer 负责对生成的 Triton kernel 代码进行**静态检查**，�
 
 ## 修复总结（xxx_fix.md）
 
-检视完成后，按 `.claude/skills/mlu-triton-code-review/ref/report_template.md` 的格式输出 `xxx_fix.md`，内容需至少包含：
+检视完成后，按 `.claude/skills/mlu-triton-code-review/ref/report_template.md` 的格式**追加**静态检查段到既有 `xxx_fix.md`；文件尚不存在时才新建。不得覆盖主流程已经写入的首轮执行记录。内容需至少包含：
 
 - 基本信息（输入文件、输出文件、检查时间）
 - 原语检测结果（存在性、数据类型）

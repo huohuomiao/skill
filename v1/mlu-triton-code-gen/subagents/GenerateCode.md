@@ -20,8 +20,8 @@ GenerateCode 是 mlu-triton-code-gen 工作流程的第 5 步 subagent。负责�
 |------|------|
 | Step 4 输出 | `{输出存储路径}/KernelGen/step4_code_spec.json` |
 | 用户输入 | `{输出存储路径}/Extractor/requirement.md` |
-| 生成阶段原语约束 | `.claude/skills/share/mlu/references/primitives.md` |
-| MLU 平台约束 | `.claude/skills/share/mlu/references/platform-rules.md` |
+| 生成阶段原语约束 | `.claude/skills/share/gpu/references/primitives.md` |
+| RTX 3090 平台约束 | `.claude/skills/share/gpu/references/platform-rules.md` |
 
 ## 输出
 
@@ -33,11 +33,11 @@ GenerateCode 是 mlu-triton-code-gen 工作流程的第 5 步 subagent。负责�
 
 ### 步骤 1：读取 Step 4 结果和原始需求
 
-读取 step4_code_spec.json、共享原语清单和 MLU 平台规则，获取：
+读取 step4_code_spec.json、共享原语清单和 RTX 3090 平台规则，获取：
 - kernel 规范：block_params, aux_params, loads, stores, reduce_loop
 - wrapper 规范：grid, block_params
 - 接口签名（函数参数）
-- MLU 生成阶段允许使用的 Triton 原语
+- NVIDIA GPU 生成阶段允许使用的 Triton 原语
 
 ### 步骤 2：生成 Triton Kernel 代码
 
@@ -62,8 +62,8 @@ def kernel_name(..., BLOCK_XX: tl.constexpr, ...):
 
 - **强制优先策略**：对于归约类算子，生成 Kernel 代码时应**尽量将归约轴上的归约操作放到 Kernel 内部的循环上执行**，即优先采用 `for <reduce_var> in range(0, <reduce_dim>, <reduce_block>)` 的方式在单个 program 内逐块遍历归约维度。
 - **实现目标**：让每个 program 尽可能独立完成其负责输出元素的全部归约累积，减少跨 program 的中间结果写回、额外同步和二次归约开销。
-- **原语约束**：必须遵守 `.claude/skills/share/mlu/references/primitives.md`，不得主动生成其中禁止的原语。
-- **平台约束**：仅在目标平台为 MLU 时读取 `.claude/skills/share/mlu/references/platform-rules.md`，并应用设备、Grid、NRAM 和运行时规则。
+- **原语约束**：必须遵守 `.claude/skills/share/gpu/references/primitives.md`，不得主动生成其中禁止的原语。
+- **平台约束**：读取 `.claude/skills/share/gpu/references/platform-rules.md`，并应用 RTX 3090 的 shared memory、寄存器、occupancy、launch 和运行时规则。
 
 **判断归约类型**：
 - **单遍归约**：使用 `step4_code_spec.kernel.reduce_loop` 字段
@@ -206,13 +206,13 @@ kernel[grid](
 - **🚫 禁止**将参数改名或拆分（如把 `BLOCK_HW` 改成 `BLOCK_H` 或 `BLOCK_W`）
 - **🚫 禁止**自己重新计算索引，必须直接使用公式中的变量名
 - **🚫 禁止**用取模/除法重新拆分融合后的索引（如 `hw_idx`）
-- **🚫 禁止**主动生成 `.claude/skills/share/mlu/references/primitives.md` 中列出的禁用原语
+- **🚫 禁止**主动生成 `.claude/skills/share/gpu/references/primitives.md` 中列出的禁用原语
 
-### MLU 适配
+### NVIDIA GPU/CUDA 适配
 
-- `cuda` → `mlu`
-- `CUDA` → `MLU`
-- `is_cuda` → `is_mlu`
+- 设备字面量统一为 `device='cuda'`
+- 同步 API 使用 `torch.cuda.synchronize()`
+- 设备断言使用 `tensor.is_cuda`
 
 ## 输出格式
 

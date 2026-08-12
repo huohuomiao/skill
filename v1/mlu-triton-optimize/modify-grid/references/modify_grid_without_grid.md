@@ -1,105 +1,33 @@
-## 情况 A：无法提取 Grid，使用默认表达式
+## 情况 A：无法提取 Grid
 
-**场景**：只有 kernel 定义，没有调用语句，或调用语句无法解析。
+**场景**：只有 kernel 定义，没有调用语句，或 launch 表达式无法回溯。
 
-**初始代码**：
 ```python
-import torch
-import triton
-import triton.language as tl
-
 @triton.jit
-def elementwise_add(
-    a_ptr, b_ptr, c_ptr,
-    n_elements: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
-):
+def elementwise_add(a_ptr, b_ptr, c_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
-    block_start = pid * BLOCK_SIZE
-    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
-
     a = tl.load(a_ptr + offsets, mask=mask)
     b = tl.load(b_ptr + offsets, mask=mask)
-    c = a + b
-    tl.store(c_ptr + offsets, c, mask=mask)
+    tl.store(c_ptr + offsets, a + b, mask=mask)
 
-# 无调用语句，无法提取 grid
+# 未提供 wrapper / launch
 ```
-## 优化分析步骤 (Modified Analysis)
 
-**第一步：提取原始 Grid 结构**
-1.  **定位调用**：未找到调用语句。
-2.  **提取表达式**：N/A。
-3.  **识别形式**：缺失。
-4.  **拆解维度**：未知。
+## 分析步骤
 
-**第二步：判断是否需要优化 (Decision)**
-1.  **硬件接口**：缺失硬件信息获取。
-2.  **Grid 约束**：由于无法定位 Grid，无法判断约束是否存在。
-* **结论**：出于防御性编程和架构适配，**需要执行优化**，并提供标准化的 Wrapper 示例。
+1. 已知每个 program 看似处理一个 `BLOCK_SIZE`，但不知道真实 shape、meta 参数、wrapper 约束和调用次数。
+2. 不能据此虚构 `n_elements` 来源、BLOCK_SIZE、Grid 或输出分配。
+3. 也不能判断该 kernel 是否被其它包装器以多种 Grid 调用。
 
-**第三步：生成推荐 Grid 表达式**
-1.  **判定情况**：属于 **情况 A（默认/缺失 Grid）**。
-2.  **计算总量**：`total_blocks = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE`。
-3.  **应用约束**：引入 `MAX_GRID_SIZE`（基于硬件核心数与 `num_warps`）。
-4.  **推荐表达式**：`grid = lambda meta: (min(total_blocks, MAX_GRID_SIZE),)`。
+**结论**：保持原代码，在报告中写明“缺少可解析 launch，跳过 modify-grid”。请求调用方补充完整 wrapper 后再分析。
 
+以下做法均禁止：
 
-**修改后的完整代码**：
+- 默认生成 `grid=min(cdiv(n_elements, BLOCK_SIZE), sm_count)`；普通 CUDA kernel 会因此遗漏尾部逻辑块。
+- 凭空添加 `tl.num_programs` 循环；这会改变 kernel 结构且没有实测依据。
+- 猜测设备 SM 数或使用固定 RTX 3090 数值。
+- 为缺失的 wrapper 猜测输入 shape、dtype、输出初始化或精度阈值。
 
-```python
-import torch
-import triton
-import triton.language as tl
-from triton.backends.mlu import driver
-
-@triton.jit
-def elementwise_add(
-    a_ptr, b_ptr, c_ptr,
-    n_elements, # 改为普通参数
-    BLOCK_SIZE: tl.constexpr,
-    total_blocks: tl.constexpr, # 显式传入总任务块数
-):
-    # 4.2.1 获取一维 program ID 和总 program 数
-    pid = tl.program_id(0)
-    num_jobs = tl.num_programs(0)
-    # 4.2.2 引入 Persistent 步长循环
-    # 处理逻辑：如果 total_blocks > num_jobs，每个核心会循环处理多个 block
-    for block_id in range(pid, total_blocks, num_jobs):
-        # 4.2.3 使用 block_id 替代 pid 计算偏移
-        block_start = block_id * BLOCK_SIZE
-        offsets = block_start + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < n_elements
-        a = tl.load(a_ptr + offsets, mask=mask)
-        b = tl.load(b_ptr + offsets, mask=mask)
-        c = a + b
-        tl.store(c_ptr + offsets, c, mask=mask)
-
-def run_elementwise_add():
-    n_elements = 102400
-    BLOCK_SIZE = 128
-    num_warps = 1 # MLU 推荐设置，可根据实际 kernel 复杂度调整
-    a = torch.randn(n_elements, device='mlu')
-    b = torch.randn(n_elements, device='mlu')
-    c = torch.empty_like(a)
-    # 4.1.1 获取寒武纪 MLU 物理核心总数
-    _devprob = driver.BangUtils().get_device_properties(torch.mlu.current_device())
-    TOTAL_CORE_NUM = _devprob.get('cluster_num') * _devprob.get("core_num_per_cluster")
-    # 4.1.2 引入 Union 架构约束：MAX_GRID_SIZE 取决于物理核心数与 num_warps
-    MAX_GRID_SIZE = TOTAL_CORE_NUM // num_warps
-    # 计算原始任务总数 (使用 // 替代 triton.cdiv)
-    total_blocks = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE
-    # 4.1.3 替换 Grid：使用 lambda 动态计算，并加 MAX_GRID_SIZE 封顶
-    grid = lambda meta: (min(total_blocks, MAX_GRID_SIZE),)
-    # Launch Kernel
-    elementwise_add[grid](
-        a, b, c,
-        n_elements,
-        BLOCK_SIZE=BLOCK_SIZE,
-        total_blocks=total_blocks,
-        num_warps=num_warps
-    )
-    return c
-
-```
+若完整调用稍后可用，应回到主策略 Step 1，先建立普通 Grid 基线，再决定是否生成展平或 persistent 候选。

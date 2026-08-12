@@ -51,7 +51,7 @@ kernel[(grid,)](x_ptr, y_ptr, BLOCK_SIZE=128)
 3. 平台关键字未转换
    错误现象：迁移代码后仍保留源平台的设备字面量、同步 API 或环境变量。
 
-后果：目标后端无法识别设备，或在底层调用时触发驱动异常。平台具体替换规则必须从对应共享平台配置读取；MLU 目标读取 `.claude/skills/share/mlu/references/platform-rules.md`。
+后果：目标后端无法识别设备，或在底层调用时触发驱动异常。RTX 3090 目标必须从 `.claude/skills/share/gpu/references/platform-rules.md` 读取替换规则；`MLU`、`Cambricon`、`torch_mlu`、`torch.mlu`、`is_mlu`、`tl.extra.mlu` 均属于残留，CUDA 本身不是残留。
 
 ```python
 # ❌ 错误示例

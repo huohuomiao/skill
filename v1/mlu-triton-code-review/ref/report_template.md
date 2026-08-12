@@ -7,18 +7,11 @@
 ---
 ## 一、 Triton 原语检测
 
-| 原语名称       | 使用位置/行号 | 数据类型 | 是否支持 int64 | 是否符合规范 | 备注/建议修改                                           |
-| -------------- | ------------- | -------- | -------------- | ------------ | ------------------------------------------------------- |
-| `arange`       | kernel.py:45  | int64    | No             | ❌            | 不支持 int64，建议改用 `tl.arange(..., dtype=tl.int32)` |
-| `zeros_like`   | kernel.py:50  | int64    | Yes            | ✅            | -                                                       |
-| `cdiv`         | kernel.py:60  | int64    | Yes            | ✅            | -                                                       |
-| `dot`          | kernel.py:72  | int8     | No             | ⚠️            | 输出默认 fp32，可根据需求指定 bf16                      |
-| `load`         | kernel.py:80  | int64    | Yes            | ✅            | 注意边界 mask 检查                                      |
-| `store`        | kernel.py:85  | int64    | Yes            | ✅            | 必须加 mask 防止越界                                    |
-| `atomic_add`   | kernel.py:95  | int32    | Yes            | ⚠️            | int64 不支持；低位宽可用 fp16/bf16/int8/int16 扩展      |
-| `broadcast_to` | kernel.py:102 | int64    | Yes            | ✅            | -                                                       |
-| `sigmoid`      | kernel.py:110 | bf16     | No             | ⚠️            | 平台扩展，需读取目标平台原语清单                        |
-| `randint`      | kernel.py:120 | int64    | Yes            | ✅            | seed 高 16 位会截断                                     |
+| 原语名称 | 使用位置/行号 | 数据类型 | 目标版本支持状态 | 是否符合规范 | 备注/建议修改 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `[primitive]` | `[file:line]` | `[dtype]` | 支持 / 不支持 / 待编译确认 | ✅ / ❌ / ⚠️ | 依据共享平台门禁、安装版本和编译结果填写 |
+
+共享原语文档是平台门禁，不是完整 API 快照；未列出的原语不得直接判为不支持，应标记“待当前安装版本编译确认”。
 
 ## 二、 Triton 常见错误检测
 
@@ -36,15 +29,15 @@
 
 ## 三、平台扩展数学库检测
 
-目标平台没有扩展数学库时标记为 `N/A`。MLU 目标按照 `.claude/skills/share/mlu/references/libdevice.md` 检查 Libdevice。
+目标平台没有扩展数学库时标记为 `N/A`。RTX 3090/CUDA 目标按照 `.claude/skills/share/gpu/references/libdevice.md` 检查 Libdevice。
 
 | 检查项 | 状态 | 详情/错误位置 | 判定标准 |
 | :--- | :--- | :--- | :--- |
-| **数据类型兼容性** | ✅/❌ | | **禁区检查**：`abs`, `sin`, `exp`, `log`, `sqrt` 等算子是否违规使用了 **fp64**。 |
-| **舍入模式变体** | ✅/❌ | | 算术运算（`add`, `sub`, `mul`, `div`）是否显式指定了变体（如 `add_rn`, `sub_rz`）。 |
-| **量化饱和处理** | ✅/❌ | | 在 `float2byte` 或 `float2int` 转换处，是否按量化需求补全了 `_sat` 后缀。 |
-| **快速/极致算子使用** | ✅/❌ | | 是否在推理场景中错误调用了 `Standard` 算子而非 `Ultra/Fast` 算子。 |
-| **复数域语法** | ✅/❌ | | `tl.math.add_complex` 等复数算子名及参数类型是否匹配。 |
-| **随机数版本** | ✅/❌ | | 是否根据需求选择了正确的版本（`philox_v2` 对齐精度，`v3` 追求性能）。 |
+| **调用路径合规性** | ✅/❌ | | 是否使用 GPU 共享文档支持的 Triton/libdevice 调用路径。 |
+| **数据类型兼容性** | ✅/❌ | | 输入、返回值和中间 dtype 是否符合目标函数签名。 |
+| **数值域与边界** | ✅/❌ | | `sin`、`exp`、`log`、`sqrt` 等是否正确处理定义域、NaN/Inf。 |
+| **近似与快速数学** | ✅/❌ | | 近似实现或 fast-math 是否满足用户给定精度阈值。 |
+| **平台残留** | ✅/❌ | | 是否残留 `MLU`、`Cambricon`、`torch_mlu`、`torch.mlu` 或 `tl.extra.mlu`。 |
+| **结果一致性** | ✅/❌ | | 是否在 RTX 3090 上与 PyTorch reference 的容差要求一致。 |
 
 ---

@@ -52,7 +52,7 @@ def softmax_wrapper(input):
 
 
 def test_softmax_wrapper():
-    inp = torch.randn((4, 8, 64), dtype=torch.float32, device="mlu")
+    inp = torch.randn((4, 8, 64), dtype=torch.float32, device="cuda")
     out = softmax_wrapper(inp)
     ref = torch.softmax(inp, dim=2)
     torch.testing.assert_close(out, ref)
@@ -61,10 +61,10 @@ def test_softmax_wrapper():
 
 代表性测例：
 ```python
-inp = torch.randn((4, 8, 64), dtype=torch.float32, device="mlu")
+inp = torch.randn((4, 8, 64), dtype=torch.float32, device="cuda")
 ```
 
-根据 wrapper 中的 kernel launch，`input_ptr` 绑定到 wrapper 的 `input` 参数，在代表性测例中对应 `inp = torch.randn((4, 8, 64), dtype=torch.float32, device="mlu")`，contiguous 布局，因此真实 `shape` 是 `[4, 8, 64]`，真实 `stride` 是 `[512, 64, 1]`。
+根据 wrapper 中的 kernel launch，`input_ptr` 绑定到 wrapper 的 `input` 参数，在代表性测例中对应 `inp = torch.randn((4, 8, 64), dtype=torch.float32, device="cuda")`，contiguous 布局，因此真实 `shape` 是 `[4, 8, 64]`，真实 `stride` 是 `[512, 64, 1]`。
 
 `output_ptr` 绑定到 wrapper 内部的 `output`，而 `output = torch.empty_like(input)`，因此 `output_ptr` 的真实 `shape` 也是 `[4, 8, 64]`，真实 `stride` 也是 `[512, 64, 1]`。
 

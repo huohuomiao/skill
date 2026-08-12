@@ -1,6 +1,6 @@
-# Triton MLU reduce类算子综合优化
+# Triton CUDA reduce类算子综合优化
 
-循环、访存和归约改写保留为通用 Triton 策略；MLU 的 NRAM、流水、三维 Tile 降维、Libdevice 与设备规则统一读取 `.claude/skills/share/mlu/references/platform-rules.md`。
+循环、访存和归约改写保留为通用 Triton 候选；CUDA shared memory、寄存器、occupancy、Libdevice 与设备规则统一读取 `.claude/skills/share/gpu/references/platform-rules.md`。
 
 ## 职责概述
 
@@ -8,9 +8,9 @@
 
 | 执行顺序 | 优化策略 | 核心适用场景 | 优化目标 |
 |----------|----------|--------------|----------|
-| 1 | while循环转for循环优化 | kernel中存在可确定分析为固定步长的计数型 `while` 循环 | 将while循环改写为语义等价的for循环，使MLU Triton能够启用流水 |
+| 1 | while循环转for循环候选 | kernel中存在可确定分析为固定步长的计数型 `while` 循环 | 生成语义等价候选；仅实测更快时保留 |
 | 2 | 归约轴循环优化 | 归约轴存在显式循环计算，且归约轴大小 ≤ MAX_REDUCE_DIM | 消除归约循环，改用一次性向量化加载提升性能 |
-| 3 | 归约三维tile转二维tile优化 | 归约计算作用于三维tile，且沿中间维度（axis=1）归约 | 非归约首维度分块设置为 1 实现归约降维，使归约维度处于最高维，提升MLU归约指令效率 |
+| 3 | 归约三维tile转二维tile候选 | 归约计算作用于三维 tile，且可证明降维等价 | 生成 BLOCK 首维为 1 的候选；仅实测更快时保留 |
 | 4 | for循环消除优化 | `@triton.heuristics`中已将循环分块参数设置为循环边界 | 消除只执行一次的分块循环，降低控制流与编译分析开销 |
 | 5 | 冗余访存消除优化 | for循环消除后存在多个等价 `tl.load`，且中间无可能改写同一内存的操作 | 复用首次加载结果，减少全局内存读取与重复索引分析 |
 | 6 | 全维度Reduce改写Load + Reduce + Atomic模式优化 | 全维度reduce（dim=None或等效全维度规约）当前未采用单kernel + load + reduce + atomic模式 | 消除多kernel启动和中间buffer开销，统一改写为单kernel分块加载、局部规约、原子写标量输出 |
@@ -29,10 +29,11 @@
 **重要提醒**
 - 任一策略若通过准入校验，就必须立即执行其优化流程，不可因已有其他优化而跳过。
 - 各优化策略仅负责代码改写，不得自行执行编译或运行时验证，所有测试统一在**统一结果测试**阶段进行。
+- 策略 1 与策略 3 来自旧后端经验，在 CUDA 上不是普遍规律。统一结果测试必须分别做等输入 A/B；精度通过但没有稳定性能提升也要回退该候选。
 ## 策略1：while循环转for循环优化
 
 ### 优化原理
-MLU Triton 目前对 `while` 循环无法启用流水优化，导致循环体内的访存与计算难以通过流水并行提升执行效率。若 `while` 循环本质上是计数型循环，即循环变量从确定起点开始、每轮按固定步长单调变化，并以确定边界作为结束条件，且循环体内没有改变循环次数语义的控制流时，则可以等价改写为 `for` 循环，使 MLU Triton 能够对该循环启用流水优化。
+CUDA Triton 对 `while` 与 `for` 的生成质量取决于具体版本、边界和循环体，不能静态断言 `for` 一定更快。若 `while` 本质上是固定步长计数循环，可生成语义等价的 `for` 候选；只有在目标 RTX 3090 上实测稳定更快才保留。
 
 ### 功能说明
 本优化策略针对Triton kernel做分析，自动完成以下操作：
@@ -167,10 +168,10 @@ def kernel(x_ptr, out_ptr, N, stride, BLOCK_N: tl.constexpr):
 - 基于原始 kernel 定义，进行如下修改，生成优化版本（**函数名保持与原始一致**，以直接替换）：
   1. 处理 `@triton.heuristics` 装饰器
     - 检查原始 kernel 是否已有 `@triton.heuristics` 装饰器。
-    - **如果没有**：直接添加新的装饰器：`@triton.heuristics({分块参数名: lambda args: args[归约轴大小参数名]})`。
+    - **如果没有**：直接添加新的装饰器：`@triton.heuristics({分块参数名: lambda args: triton.next_power_of_2(args[归约轴大小参数名])})`。
     - **如果有**：需要**合并**原有的 heuristic 配置与新配置。
       - 提取原有装饰器中的配置字典（注意支持 `values` 关键字或直接字典两种形式）。
-      - 如果原有字典中已经存在 `分块参数名` 键，且其值已经是 `lambda args: args[归约轴大小参数名]`，则无需修改；否则，更新该键的值。
+      - 如果原有字典中已经存在 `分块参数名` 键，且其值已经是 `lambda args: triton.next_power_of_2(args[归约轴大小参数名])`，则无需修改；否则，更新该键的值。
       - 将新配置合并到原有字典中（新配置优先，覆盖同名键）。
       - 生成新的装饰器，保持与原代码相同的调用风格（如果原来使用了 `values` 关键字，则继续使用；否则使用直接字典形式）。
       - 如果原有装饰器还使用了其他参数（如 `values` 之外的关键字），应保留。
@@ -193,7 +194,7 @@ def kernel(x_ptr, out_ptr, N, stride, BLOCK_N: tl.constexpr):
 - 确保仅在归约轴分块参数使用的是关键字参数形式时才移除，避免因位置参数错位导致运行时错误，且其余所有参数必须完整保留，参数顺序、关键字参数形式均不做任何修改。
 
 **重要提醒**
-- 必须使用 heuristic 设置分块参数，优化后的 kernel **必须** 通过 `@triton.heuristics` 装饰器将分块参数设置为归约轴大小。
+- 必须使用 heuristic 设置分块参数，优化后的 kernel **必须** 通过 `@triton.heuristics` 将分块参数设置为不小于归约轴大小的 2 的幂，并保留边界 mask。
 - 若kernel内有多个归约轴循环，对每个归约轴循环都进行修改。
 - 若存在 `@triton.autotune`，必须确保其不再包含对分块参数名的调优，避免与 heuristic 的静态设定冲突。
 - 仅修改必要代码。
@@ -220,13 +221,13 @@ def wrapper(x, dim):
     sum_kernel_blocked[grid](x, out, reduce_size, stride_reduce, stride_out, BK=128)
     return out
 
-x = torch.randn(32, 1024, device='mlu', dtype=torch.float32)
+x = torch.randn(32, 1024, device='cuda', dtype=torch.float32)
 out = wrapper(x, dim=1)
 ```
 
 #### 优化后代码
 ```python
-@triton.heuristics({"BK": lambda args: args["reduce_size"]})
+@triton.heuristics({"BK": lambda args: triton.next_power_of_2(args["reduce_size"])})
 @triton.jit
 def sum_kernel_blocked(x_ptr, out_ptr, reduce_size, stride_reduce, stride_out, BK: tl.constexpr):
     output_idx = tl.program_id(0)
@@ -243,14 +244,14 @@ def wrapper(x, dim):
     sum_kernel_blocked[grid](x, out, reduce_size, stride_reduce, stride_out)
     return out
 
-x = torch.randn(32, 1024, device='mlu', dtype=torch.float32)
+x = torch.randn(32, 1024, device='cuda', dtype=torch.float32)
 out = wrapper(x, dim=1)
 ```
 
 #### 示例说明：
 1. 归约轴识别与分块参数提取：循环 `for start in range(0, reduce_size, BK)` 是典型的分块归约循环，`reduce_size` 为归约轴大小，`BK` 为分块参数名。归约操作为求和，中间结果变量 `acc` 跨块累加。
 2. 归约轴大小提取与阈值判断：测试数据中 `x.shape = (32, 1024)`，`dim=1`，因此归约轴大小 `reduce_size = 1024`。由于 `1024 ≤ 16384 = MAX_REDUCE_DIM`，触发优化流程。
-3. heuristics 添加：新增 `@triton.heuristics({"BK": lambda args: args["reduce_size"]})`，将分块参数 `BK` 动态设置为归约轴实际大小。
+3. heuristics 添加：新增 `@triton.heuristics({"BK": lambda args: triton.next_power_of_2(args["reduce_size"])})`，将 `BK` 设置为覆盖归约轴的合法 2 的幂 block 长度，并由 mask 屏蔽尾部。
 4. Kernel 函数体优化：消除 `for` 循环，直接使用 `tl.arange(0, BK)` 生成全轴偏移，一次性向量化加载并归约。
 
 归约轴循环优化的更多示例见[references/reduce_dim_loop_opt_example.md](references/reduce_dim_loop_opt_example.md)
@@ -258,7 +259,7 @@ out = wrapper(x, dim=1)
 ## 策略3：归约三维tile转二维tile优化
 
 ### 优化原理
-对MLU来说，在三维tile上沿中间维度（axis=1）进行归约时，后端指令效率较差，同时，归约轴位于高维通常比在低维更容易生成高效的指令。本优化策略针对「归约计算作用于三维tile + 归约轴为中间维度(axis=1)」的场景，通过`@triton.heuristics`将非归约首维度的分块参数设置为1，使该维度的并行分块退化为标量计算，从而将原三维 tile 的归约操作自然降维为二维（归约轴维度 + 非归约尾维度），此时归约维度成为最高维，提升 MLU 归约指令执行效率。
+CUDA 后端没有“三维 tile 沿中间维归约必然低效”的通用规则。对三维 tile 可把非归约首维 BLOCK 设为 1，生成语义等价的二维候选，以比较访存合并、寄存器压力与 occupancy；只有在目标 RTX 3090 上实测稳定更快才保留，不得把该改写作为强制规则。
 ### 功能说明
 本优化策略针对Triton kernel做分析，自动完成以下操作：
 1. 准入校验：识别**归约计算作用于三维tile + 沿中间维度(axis=1)归约**的归约操作，若不满足优化特征，直接返回原始代码。
@@ -392,7 +393,7 @@ def sum_kernel(
         tl.store(out + out_offset, result_sum, mask=out_mask)
         def wrapper(inp, dim):
     ...
-    grid = lambda meta: (min(triton.cdiv(M, meta["BLOCK_M"]) * triton.cdiv(K, meta["BLOCK_K"]), core_num),)
+    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]) * triton.cdiv(K, meta["BLOCK_K"]),)
     sum_kernel[grid](inp, out, M, N, K, BLOCK_M = 8, BLOCK_N = 128, BLOCK_K = 32)
 ```
 
@@ -456,7 +457,7 @@ def sum_kernel(
 
 def wrapper(inp, dim):
     ...
-    grid = lambda meta: (min(triton.cdiv(M, meta["BLOCK_M"]) * triton.cdiv(K, meta["BLOCK_K"]), core_num),)
+    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]) * triton.cdiv(K, meta["BLOCK_K"]),)
     # 优化后调用：移除BLOCK_M参数（由heuristics自动设为1），保留其他参数
     sum_kernel[grid](inp, out, M, N, K, BLOCK_N = 128, BLOCK_K = 32)
 ```
@@ -504,7 +505,7 @@ def wrapper(inp, dim):
 1. **识别分块循环结构**：定位以分块参数作为步长、按区间分批遍历某个维度或数据范围的 `for` 循环。
 2. **提取循环边界与步长**：从循环范围中提取下界、上界和步长表达式，重点记录作为步长使用的分块参数及其对应的遍历边界。
 3. **匹配 heuristic 映射**：判断循环步长参数是否已在 `@triton.heuristics` 中设置为该循环上界：
-   - `@triton.heuristics({"BLOCK_N": lambda args: args["N"]})` + `for start_n in range(0, N, BLOCK_N)` → 可消除。
+   - `@triton.heuristics({"BLOCK_N": lambda args: triton.next_power_of_2(args["N"])})` + `for start_n in range(0, N, BLOCK_N)` → 可消除（`BLOCK_N >= N` 且为合法 block 长度）。
    - `@triton.heuristics({"BLOCK_N": lambda args: args["N"]})` + `for start_k in range(0, K, BLOCK_N)` → 不可消除，边界不匹配。
 4. **验证循环变量用途**：确认循环变量只用于生成当前分块偏移、mask 或地址表达式，且循环体没有依赖多次迭代累积才正确的副作用。
 
@@ -536,7 +537,7 @@ def wrapper(inp, dim):
 
 #### 原始代码
 ```python
-@triton.heuristics({"BLOCK_N": lambda args: args["N"]})
+@triton.heuristics({"BLOCK_N": lambda args: triton.next_power_of_2(args["N"])})
 @triton.jit
 def sum_kernel(inp, out, M, N, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
     pid_m = tl.program_id(0)
@@ -557,7 +558,7 @@ def sum_kernel(inp, out, M, N, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
 ```
 #### 优化后代码
 ```python
-@triton.heuristics({"BLOCK_N": lambda args: args["N"]})
+@triton.heuristics({"BLOCK_N": lambda args: triton.next_power_of_2(args["N"])})
 @triton.jit
 def sum_kernel(inp, out, M, N, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
     pid_m = tl.program_id(0)
@@ -575,8 +576,8 @@ def sum_kernel(inp, out, M, N, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
 ```
 
 #### 示例说明：
-1. heuristics 映射：`@triton.heuristics({"BLOCK_N": lambda args: args["N"]})` 表明 `BLOCK_N` 在运行时被设置为 `N`。
-2. 循环识别：循环 `for start_n in range(0, N, BLOCK_N)` 的循环上界为 `N`，步长为 `BLOCK_N`，因此循环只执行一次。
+1. heuristics 映射：`BLOCK_N=triton.next_power_of_2(N)`，保证 `BLOCK_N >= N` 且适配 `tl.arange`。
+2. 循环识别：循环 `for start_n in range(0, N, BLOCK_N)` 的步长不小于上界，因此循环只执行一次。
 3. 循环改写：移除 `for` 循环外壳，将 `start_n` 替换为 `0`，因此 `start_n + tl.arange(0, BLOCK_N)` 化简为 `tl.arange(0, BLOCK_N)`。
 4. 中间结果变量删除：`acc` 仅承载单次循环的归约结果，因此删除初始化和累加更新。
 
@@ -634,7 +635,7 @@ for循环消除后，原本位于不同 pass 或单次循环体内的访存语�
 
 #### 原始代码（for循环消除后存在重复 load）
 ```python
-@triton.heuristics({"BLOCK_N": lambda args: args["N"]})
+@triton.heuristics({"BLOCK_N": lambda args: triton.next_power_of_2(args["N"])})
 @triton.jit
 def softmax_kernel(
     x_ptr, output_ptr,
@@ -659,21 +660,21 @@ def softmax_kernel(
     x_index = m_idx[:, None] * stride_x0 + n_idx[None, :] * stride_x1
     mask_x = (m_idx[:, None] < M) & (n_idx[None, :] < N)
     x = tl.load(x_ptr + x_index, mask=mask_x, other=0.0)
-    row_sum = tl.sum(tl.extra.mlu.libdevice.fast_expf(x - row_max[:, None]), axis=1)
+    row_sum = tl.sum(tl.exp(x - row_max[:, None]), axis=1)
 
     # Pass3
     n_idx = tl.arange(0, BLOCK_N)
     x_index = m_idx[:, None] * stride_x0 + n_idx[None, :] * stride_x1
     mask_x = (m_idx[:, None] < M) & (n_idx[None, :] < N)
     x = tl.load(x_ptr + x_index, mask=mask_x, other=0.0)
-    y = tl.extra.mlu.libdevice.fast_expf(x - row_max[:, None]) / row_sum[:, None]
+    y = tl.exp(x - row_max[:, None]) / row_sum[:, None]
     output_index = m_idx[:, None] * stride_o0 + n_idx[None, :] * stride_o1
     tl.store(output_ptr + output_index, y, mask=mask_x)
 ```
 
 #### 优化后代码
 ```python
-@triton.heuristics({"BLOCK_N": lambda args: args["N"]})
+@triton.heuristics({"BLOCK_N": lambda args: triton.next_power_of_2(args["N"])})
 @triton.jit
 def softmax_kernel(
     x_ptr, output_ptr,
@@ -692,8 +693,8 @@ def softmax_kernel(
     x = tl.load(x_ptr + x_index, mask=mask_x, other=0.0)
     row_max = tl.max(x, axis=1)
 
-    row_sum = tl.sum(tl.extra.mlu.libdevice.fast_expf(x - row_max[:, None]), axis=1)
-    y = tl.extra.mlu.libdevice.fast_expf(x - row_max[:, None]) / row_sum[:, None]
+    row_sum = tl.sum(tl.exp(x - row_max[:, None]), axis=1)
+    y = tl.exp(x - row_max[:, None]) / row_sum[:, None]
     output_index = m_idx[:, None] * stride_o0 + n_idx[None, :] * stride_o1
     tl.store(output_ptr + output_index, y, mask=mask_x)
 ```
@@ -764,7 +765,7 @@ def softmax_kernel(
 **重要提醒**
 - 改写必须保证最终返回值 dtype 与原始 wrapper 完全一致，且规约语义不变。
 - 输出标量初始化必须匹配所选 atomic 语义：`tl.atomic_add` 使用加法单位元，`tl.atomic_max` 使用最小初值，`tl.atomic_min` 使用最大初值，按位 atomic 使用对应按位单位元；不得把所有场景都改成 `torch.zeros`。
-- 所有 kernel 中 cuda 关键字替换为 mlu，适配寒武纪硬件。
+- 所有 host tensor、同步与设备检查使用 CUDA；不得生成非 CUDA backend 或其它设备字符串。
 
 ### 优化示例（full_reduce_load_atomic_opt）
 
@@ -843,7 +844,7 @@ def wrapper(inp):
 ## 策略7：layout 变换消除
 
 ### 优化原理
-在 Triton 实现的归约算子中，可能为了适配硬件，会在 wrapper 函数中对输入进行 layout 变换（`transpose/permute + .contiguous()`），但这种行为在mlu上会严重破坏性能，kernel间的
+在 Triton 实现的归约算子中，wrapper 可能对输入做 layout 变换（`transpose/permute + .contiguous()`）；在 CUDA 上额外搬运也可能掩盖 kernel 收益，kernel 间的
 数据搬运往往比trans指令开销更大。本优化通过消除这类冗余转置，直接在 kernel 内部按照原始维度布局进行归约（即改变 kernel 内的 reduce axis），从而避免形状变换带来的开销，提升性能。
 
 **重点提示**：目前仅支持2维reduce。
@@ -889,7 +890,7 @@ def wrapper(inp):
 - **严格限制变换**：只能修改归约轴和相关索引，禁止改变归约语义（如将 sum 改为 max）或输出形状。
 - **连续性处理**：若原始 kernel 依赖于连续内存假设，移除 `.contiguous()` 后可能需要根据实际情况在新输入上显式保证连续性（如添加 `.contiguous()` 调用或调整 kernel 的 load 策略）。若无法确保，则保守回退。
 - **复杂 layout 回退**：对于涉及三维及以上、或使用非常规维度交换（如 `.permute(2,0,1)`）的情况，本优化不适用，必须原样返回。
-- **设备适配**：所有 kernel 中 `cuda` 关键字替换为 `mlu`，适配寒武纪硬件。
+- **设备适配**：所有 host tensor、同步与设备检查使用 CUDA，目标为 RTX 3090（sm_86）。
 - **必须消除 Host Transpose/Permute 搬运**：本策略不以性能提升作为是否保留改写的条件。若二维 reduce 前存在仅用于调整归约轴的 `.transpose()` /
   `.permute()` / 等价自定义函数及 `.contiguous()`，且可通过调整 kernel 索引保持语义正确，则必须融合到 kernel 中。只要最终精度验证通过，就必须保留
   融合结果；禁止因性能无提升或性能回退而恢复 host 侧 transpose/contiguous。
@@ -917,7 +918,7 @@ def wrapper(inp):
     inp_t = inp.permute(1, 0).contiguous()   # 形状变为 (M, N)
     out = reduce_kernel(inp_t, N, M, BLOCK_SIZE=128)
     return out
-    ```
+```
 
 #### 优化后代码
 ```python
@@ -954,4 +955,4 @@ def wrapper(inp):
 
 **重要说明**：
 
-- 若运行优化 kernel 时抛出的错误信息明确指示为 NRAM 超限（例如out of resource: NRAM等片上内存不足错误），针对这种错误优先尝试调低非归约轴维度的分块参数，避免修改已被优化设定的归约轴维度分块参数。
+- 若编译或运行显示 shared-memory/寄存器超限、spilling 或 occupancy 过低，优先调低非归约轴分块参数，再依据 `share/gpu` 规则评估 `num_stages`、`num_warps`；不要硬编码 RTX 3090 资源数值。

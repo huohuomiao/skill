@@ -3,8 +3,8 @@
 ## 职责概述
 
 EnvConfig 负责 Triton 算子开发前的运行环境确认。Triton 代码的真实运行、
-编译、精度测试和性能测试必须在实际可用的 MLU 环境中完成；如果当前环境
-已经具备 MLU/Triton-MLU 工具链，则直接在本地执行命令，否则通过
+编译、精度测试和性能测试必须在实际可用的 NVIDIA GPU 环境中完成；如果当前环境
+已经具备 RTX 3090、CUDA 与 Triton 工具链，则直接在本地执行命令，否则通过
 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py`
 提交 Worker Task 作为兜底。
 
@@ -31,7 +31,7 @@ EnvConfig 产出人类可读的环境记录和设备信息原文；下游需要�
 | 来源 | 内容 |
 |------|------|
 | 用户输入 | 输出存储路径（默认为 `output_dir`） |
-| MLU 平台探测脚本 | `.claude/skills/share/mlu/runtime/test_env_code.py`、`.claude/skills/share/mlu/runtime/get_device_info.py` |
+| GPU 平台探测脚本 | `.claude/skills/share/gpu/runtime/test_env_code.py`、`.claude/skills/share/gpu/runtime/get_device_info.py` |
 | 通用 Worker 脚本 | `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` |
 | 环境变量 | `JOB_ID` —— 当前 Job 的真实 ID，仅在需要 Worker Task 时由 `submit_task_to_worker.py` 读取 |
 
@@ -49,33 +49,33 @@ EnvConfig 产出人类可读的环境记录和设备信息原文；下游需要�
 直接在本地执行：
 
 ```bash
-python .claude/skills/share/mlu/runtime/get_device_info.py
-python .claude/skills/share/mlu/runtime/test_env_code.py
+python .claude/skills/share/gpu/runtime/get_device_info.py
+python .claude/skills/share/gpu/runtime/test_env_code.py
 ```
 
 **检查项**：
-- `cnmon` 与 MLU 设备信息（由 `get_device_info.py` 采集）
-- Triton 版本
-- PyTorch 版本
-- MLU 设备可用性
+- `nvidia-smi` 与 GPU 信息（型号、显存、驱动，由 `get_device_info.py` 采集）
+- CUDA 与 Triton 版本
+- PyTorch 版本及其 CUDA 构建版本
+- `torch.cuda.is_available()` 与目标 RTX 3090 可用性
 - Vector Add 功能测试
 - 精度验证（最大误差 < 1e-5）
 
 **结果判断**：
-- ✅ **成功**（`get_device_info.py` 和 `test_env_code.py` exit code 都为 0）：本地 MLU 就绪，进入步骤 2a
+- ✅ **成功**（`get_device_info.py` 和 `test_env_code.py` exit code 都为 0）：本地 RTX 3090/CUDA 就绪，进入步骤 2a
 - ❌ **失败**（任一脚本 exit code 非 0）：进入步骤 1b，使用 Worker Task 兜底
 
 ### 步骤 1b：Worker 自检（本地不可用时）
 
-在 Worker 侧顺序执行 `.claude/skills/share/mlu/runtime/get_device_info.py`
-和 `.claude/skills/share/mlu/runtime/test_env_code.py`，验证远端 MLU 设备和 Triton 环境：
+在 Worker 侧顺序执行 `.claude/skills/share/gpu/runtime/get_device_info.py`
+和 `.claude/skills/share/gpu/runtime/test_env_code.py`，验证远端 RTX 3090、CUDA 和 Triton 环境：
 
 ```bash
 python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py \
     --task-type custom \
     --workdir <仓库根目录的绝对路径> \
     --timeout-sec 600 \
-    --command "python .claude/skills/share/mlu/runtime/get_device_info.py && python .claude/skills/share/mlu/runtime/test_env_code.py"
+    --command "python .claude/skills/share/gpu/runtime/get_device_info.py && python .claude/skills/share/gpu/runtime/test_env_code.py"
 ```
 
 前台同步执行该命令，等待脚本退出后读取退出码再判断。
@@ -143,7 +143,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 
 字段说明：
 - `status`: `ready` 表示实际执行环境自检与信息采集都通过
-- `execution_backend`: `local` 表示本地 MLU 可用，可直接在本地执行命令；`worker` 表示通过 Worker Task 执行
+- `execution_backend`: `local` 表示本地 RTX 3090/CUDA 可用，可直接在本地执行命令；`worker` 表示通过 Worker Task 执行
 - `env_check_task_id`: Worker 模式用于追溯 Worker 侧真实执行记录；local 模式为 `local`
 - `runtime_info_path`: 指向环境信息采集 stdout 的本地副本
 
@@ -167,7 +167,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 
 ## 下游使用说明
 
-后续步骤（`mlu-triton-code-review` 动态测试、`mlu-triton-optimize` benchmark 等）在需要真实运行 Triton 代码时，继续遵守主 Skill 的运行环境选择规则：本地 MLU 可用则直接在本地执行命令；本地不可用则通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 执行：
+后续步骤（`mlu-triton-code-review` 动态测试、`mlu-triton-optimize` benchmark 等）在需要真实运行 Triton 代码时，继续遵守主 Skill 的运行环境选择规则：本地 RTX 3090/CUDA 可用则直接在本地执行命令；本地不可用则通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 执行：
 ```bash
 python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py \
     --workdir <绝对路径> \
@@ -182,6 +182,6 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 
 | 脚本 | 位置 | 功能 |
 |------|------|------|
-| `test_env_code.py` | `.claude/skills/mlu-triton-main/subagents/scripts/` | Triton 环境自检脚本，可直接在本地执行；Worker 模式下作为 `submit_task_to_worker.py --command` 的参数执行 |
-| `get_device_info.py` | `.claude/skills/mlu-triton-main/subagents/scripts/` | MLU 设备信息采集脚本，可直接在本地执行；Worker 模式下作为 `submit_task_to_worker.py --command` 的参数执行 |
-| `submit_task_to_worker.py` | `.claude/skills/mlu-triton-main/subagents/scripts/` | Worker 提交 + 轮询 + 回读真实结果；仅在本地没有可用 MLU/工具链时使用 |
+| `test_env_code.py` | `.claude/skills/share/gpu/runtime/` | CUDA Triton 环境自检脚本，可直接在本地执行；Worker 模式下作为 `submit_task_to_worker.py --command` 的参数执行 |
+| `get_device_info.py` | `.claude/skills/share/gpu/runtime/` | NVIDIA GPU/CUDA 信息采集脚本，可直接在本地执行；Worker 模式下作为 `submit_task_to_worker.py --command` 的参数执行 |
+| `submit_task_to_worker.py` | `.claude/skills/mlu-triton-main/subagents/scripts/` | Worker 提交 + 轮询 + 回读真实结果；仅在本地没有可用 RTX 3090/CUDA 工具链时使用 |

@@ -1,6 +1,6 @@
 ---
 name: mlu-triton-code-gen
-description: MLU Triton Kernel 代码生成专家，负责根据算子需求生成完整的 Triton kernel 实现。
+description: NVIDIA GPU/CUDA Triton Kernel 代码生成专家，负责根据算子需求生成适配 RTX 3090 的完整 Triton kernel 实现。
 ---
 
 # mlu-triton-code-gen
@@ -34,9 +34,11 @@ description: MLU Triton Kernel 代码生成专家，负责根据算子需求生�
 
 ## 概述
 
-该 SKILL 是 MLU Triton Kernel 代码生成专家，负责根据算子需求生成符合 MLU 硬件架构的 Triton kernel 代码。
+该 SKILL 是 NVIDIA GPU/CUDA Triton Kernel 代码生成专家，负责根据算子需求生成适配 RTX 3090（Ampere，Compute Capability 8.6）的 Triton kernel 代码。
 
-**核心目标**：根据输入的需求文档，生成可在 MLU 设备上正确执行的 Triton kernel 代码，包含**方案设计、代码生成、测试生成与首轮执行、最终验证**几个关键阶段。
+**核心目标**：根据输入的需求文档，生成可在 RTX 3090/CUDA 上正确执行的 Triton kernel 代码，包含**方案设计、代码生成、测试生成与首轮执行、最终验证**几个关键阶段。
+
+> 兼容说明：目录名、frontmatter `name` 与 `mlu-triton-*` 调用名保留为稳定标识；其实际平台语义为 NVIDIA GPU/CUDA。
 
 ## 运行环境选择规则
 
@@ -51,7 +53,7 @@ description: MLU Triton Kernel 代码生成专家，负责根据算子需求生�
 
 1. **方案设计**：分析需求文档，确定拆分轴、块索引映射、轴融合优化，生成代码规范方案
 2. **代码生成**：根据方案生成 Triton kernel 代码和 wrapper 函数
-3. **测试生成与首轮执行**：生成完整的测试代码（包含数据生成、精度验证、性能测试）并立即执行一次
+3. **测试生成**：生成完整的测试代码（包含数据生成、精度验证、性能测试）；首轮执行统一交给 code-review
 4. **最终验证**：通过 mlu-triton-code-review 进行动态检查和修复，确保代码正确性和精度
 
 ## 用法
@@ -90,7 +92,7 @@ description: MLU Triton Kernel 代码生成专家，负责根据算子需求生�
 
 ### 阶段 3：测试代码生成与首轮执行（Step 6）
 
-生成完整的测试代码，包含数据生成、精度验证、性能测试，并立即执行一次。
+生成完整的测试代码，包含数据生成、精度验证、性能测试；本阶段不执行，避免与 code-review 重复运行。
 
 ### 阶段 4：最终代码验证（Step 7）
 
@@ -262,8 +264,8 @@ agent = spawn_agent(
 ## 重要约束
 - **只能读取**以下文件：
   - 操作说明：`.claude/skills/mlu-triton-code-gen/subagents/GenerateSpec.md`
-  - MLU 生成阶段原语约束：`.claude/skills/share/mlu/references/primitives.md`
-  - MLU 平台规则：`.claude/skills/share/mlu/references/platform-rules.md`
+  - GPU 生成阶段原语约束：`.claude/skills/share/gpu/references/primitives.md`
+  - RTX 3090 平台规则：`.claude/skills/share/gpu/references/platform-rules.md`
   - Step 3 输出：`{{output_dir}}/KernelGen/step3_axis_fusion.json`
 - **禁止读取**其他文件（如其他步骤的输出文件等）
 - 读取文件时必须使用绝对路径
@@ -311,8 +313,8 @@ agent = spawn_agent(
 ## 重要约束
 - **只能读取**以下文件：
   - 操作说明：`.claude/skills/mlu-triton-code-gen/subagents/GenerateCode.md`
-  - MLU 生成阶段原语约束：`.claude/skills/share/mlu/references/primitives.md`
-  - MLU 平台规则：`.claude/skills/share/mlu/references/platform-rules.md`
+  - GPU 生成阶段原语约束：`.claude/skills/share/gpu/references/primitives.md`
+  - RTX 3090 平台规则：`.claude/skills/share/gpu/references/platform-rules.md`
   - Step 4 输出：`{{output_dir}}/KernelGen/step4_code_spec.json`
   - 原始需求文档：`{{output_dir}}/Extractor/requirement.md`
 - **禁止读取**其他文件（如其他步骤的输出文件等）
@@ -356,7 +358,7 @@ agent = spawn_agent(
 ## 重要约束
 - **只能读取**以下文件：
   - 操作说明：`.claude/skills/mlu-triton-code-gen/subagents/GenTestCode.md`
-  - MLU 平台规则：`.claude/skills/share/mlu/references/platform-rules.md`
+  - RTX 3090 平台规则：`.claude/skills/share/gpu/references/platform-rules.md`
   - Extractor 输出：`{{output_dir}}/Extractor/requirement.md`
   - io_shapes：`{{output_dir}}/KernelGen/step1_io_shapes.json`
   - Step 5 输出：`{{output_dir}}/KernelGen/step5_kernel_code.py`

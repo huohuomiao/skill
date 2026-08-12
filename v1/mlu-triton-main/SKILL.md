@@ -1,13 +1,17 @@
 ---
 name: mlu-triton-main
-description: MLU Triton 算子开发工作流。根据用户输入的算子功能需求，使用代理调用或 Skill（EnvConfig/Extractor/mlu-triton-code-gen/mlu-triton-optimize）完成任务，最终完成MLU Triton新算子的需求、设计、实现和性能优化。触发时机：(1) 用户要求创建新 Triton 算子 (2) 需要优化 MLU Triton 算子性能 (3) 启动新的 Triton 算子开发流程
+description: NVIDIA GPU/CUDA Triton 算子开发工作流。根据用户输入的算子功能需求，使用代理调用或 Skill（EnvConfig/Extractor/mlu-triton-code-gen/mlu-triton-optimize）完成任务，最终完成面向 RTX 3090 的 Triton 新算子需求、设计、实现和性能优化。触发时机：(1) 用户要求创建新 Triton 算子 (2) 需要优化 GPU Triton 算子性能 (3) 启动新的 Triton 算子开发流程
 ---
 
-# MLU Triton MAIN
+# NVIDIA GPU/CUDA Triton MAIN
 
 ## 概述
 
 本 skill 采用**分层设计**完成任务。执行流程为：环境准备与验证 → 需求分析与验证 → Triton 代码生成 → 性能优化 → 输出最终报告和代码。
+
+> 兼容说明：目录名、frontmatter `name`、`mlu-triton-*` 调用名和既有产物路径保持不变；实际执行目标为 NVIDIA GeForce RTX 3090（CUDA）。
+>
+> 源码位于仓库的 `v1/`；部署时将 `v1` 下各目录复制或映射到 `.claude/skills/`。下文 `.claude/skills/...` 均指部署后的运行路径。
 
 ```mermaid
 graph TD
@@ -50,31 +54,33 @@ graph TD
 
 ### 运行环境选择
 
-Triton 算子开发既可能运行在带 MLU 的本地执行环境里，也可能运行在只有 CPU 的本地执行环境里。进入 Triton 代码真实运行、精度测试、性能测试等动态步骤前，必须先判断当前本地执行环境是否具备可用 MLU。
+Triton 算子开发既可能运行在带 NVIDIA GPU 的本地执行环境里，也可能运行在只有 CPU 的本地执行环境里。进入 Triton 代码真实运行、精度测试、性能测试等动态步骤前，必须先判断当前环境是否具备可用 CUDA 与 RTX 3090。
 
 **强制顺序**：所有任务开始前，必须先完成 EnvConfig 环境确认。EnvConfig 必须先在本地执行环境顺序执行以下两个脚本：
 
 ```bash
-python .claude/skills/share/mlu/runtime/get_device_info.py
-python .claude/skills/share/mlu/runtime/test_env_code.py
+python .claude/skills/share/gpu/runtime/get_device_info.py
+python .claude/skills/share/gpu/runtime/test_env_code.py
 ```
 
 判定规则：
 
 - 如果 `get_device_info.py` 和 `test_env_code.py` 都在本地执行环境 exit code = 0，则判定 `execution_backend=local`，后续 Triton 真实运行、精度测试、性能测试优先直接在本地执行。
-- 如果任意一个脚本在本地执行环境失败，则判定本地 MLU/Triton 环境不可用，必须在当前 `JOB_ID` 下通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 向远端 Worker 提交同一套环境检查脚本，先确认远端 MLU 环境可用。
+- 如果任意一个脚本在本地执行环境失败，则判定本地 CUDA/Triton 环境不可用，必须在当前 `JOB_ID` 下通过 `.claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py` 向远端 Worker 提交同一套环境检查脚本，先确认远端 RTX 3090 环境可用。
 - 远端 Worker 环境检查也必须顺序执行 `get_device_info.py` 和 `test_env_code.py`，两者都成功后才允许进入后续动态步骤，并记录 `execution_backend=worker`。
 - 如果本地执行环境和 Worker 环境检查都失败，必须停止工作流并报告真实 stdout/stderr，禁止继续生成依赖运行结果的结论。
-- 纯文本分析、代码生成、静态检查、Python 语法检查可以在本地执行环境执行；涉及 MLU 真实运行、精度或性能结论时，必须以实际可用的 MLU 环境结果为准。
+- 纯文本分析、代码生成、静态检查、Python 语法检查可以在本地执行环境执行；涉及 GPU 真实运行、精度或性能结论时，必须以实际可用的 RTX 3090/CUDA 环境结果为准。
 - 无论选择本地执行还是 Worker Task，都禁止为了编译、测试、精度或性能验证再新建一个 Job。
 - **Worker Task 阻塞执行**：每次调用 `submit_task_to_worker.py` 必须前台同步运行，等待该进程退出（脚本内部已轮询到终态才返回，退出码 `0` 成功 / `1` 失败 / `2` 基础设施错误），拿到退出码与日志后再决定下一步。禁止 `&` 后台、禁止并发提交多个 Worker Task、禁止在脚本未返回前发起其它步骤。
 
-Worker Task 仅作为当前本地执行环境没有可用 MLU/工具链时的执行兜底。远端环境检查命令必须使用：```bash
+Worker Task 仅作为当前本地执行环境没有可用 RTX 3090/CUDA 工具链时的执行兜底。远端环境检查命令必须使用：
+
+```bash
 python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py \
     --task-type custom \
     --workdir <仓库根目录的绝对路径> \
     --timeout-sec 600 \
-    --command "python .claude/skills/share/mlu/runtime/get_device_info.py && python .claude/skills/share/mlu/runtime/test_env_code.py"
+    --command "python .claude/skills/share/gpu/runtime/get_device_info.py && python .claude/skills/share/gpu/runtime/test_env_code.py"
 ```
 
 后续动态执行如需走 Worker，使用方式：
@@ -87,7 +93,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
     --command "<要执行的命令>"
 ```
 
-Worker Task 必须等到 `submit_task_to_worker.py` 返回退出码后再继续；结果判断以该退出码和其打印的 `task_output_dir` 下 `stdout.log`、`stderr.log`、`result.json` 为准；Agent 必须通过 `--timeout-sec` 设置 Worker lease 后才开始计时的运行阶段超时，Scheduler 会额外用当前 Job 剩余时间限制排队 + 运行的总截止时间。禁止手写 HTTP 请求绕过 `submit_task_to_worker.py`，禁止通过 Worker Task 安装、升级、卸载依赖，或修改 Worker 全局环境、系统路径、NeuWare/MLU 工具链等共享环境。
+Worker Task 必须等到 `submit_task_to_worker.py` 返回退出码后再继续；结果判断以该退出码和其打印的 `task_output_dir` 下 `stdout.log`、`stderr.log`、`result.json` 为准；Agent 必须通过 `--timeout-sec` 设置 Worker lease 后才开始计时的运行阶段超时，Scheduler 会额外用当前 Job 剩余时间限制排队 + 运行的总截止时间。禁止手写 HTTP 请求绕过 `submit_task_to_worker.py`，禁止通过 Worker Task 安装、升级、卸载依赖，或修改 Worker 全局环境、系统路径、CUDA/NVIDIA 驱动等共享环境。
 
 ## 步骤
 
@@ -228,6 +234,7 @@ Skill(
 ## 输出文件组织结构
 
 下图明确标注了**每一步向下一步交接的文件**（标记为 👉 下一步输入），方便模型定位读取路径：
+```text
 {output_dir}/
 ├── EnvConfig/                      # 步骤 1：环境配置
 │   ├── config.md                   # 人类可读的运行环境报告（local 或 worker）

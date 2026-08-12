@@ -13,10 +13,12 @@
 - **num_stages**：XX
 - **num_warps**：XX
 
-## 2. Triton IR 信息
+## 2. CUDA / NCU 信息
 
-- **NRAM 使用量**: XX B
-- **NRAM 利用率**: XX%
+- **Registers / thread**: XX
+- **Shared memory / block**: XX B
+- **Theoretical / achieved occupancy**: XX% / XX%
+- **Memory / compute bottleneck**: XX
 
 ## 3. 优化策略建议
 

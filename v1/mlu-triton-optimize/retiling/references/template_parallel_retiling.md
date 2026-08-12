@@ -19,7 +19,7 @@ block_size = ["BLOCK_MN", "BLOCK_MN", "BLOCK_K"]  # M、N 合并，K 独立
 
 **步骤 3**：重写 Grid
 
-Grid 必须是严格的一维 tuple。从 `block_size` 列表推导 grid 时，归约轴严禁参与 grid 划分：
+CUDA Grid 可保留原有多维 tuple；仅当展平能简化索引且不损害性能时才改为一维。归约轴严禁仅为展平而参与 grid 划分，普通 launch 不得限制到 SM 数量：
 
 ```python
 # block_size = ["BLOCK_MN", "BLOCK_MN", "BLOCK_K"]  → M、N 合并分块，K 独立分块

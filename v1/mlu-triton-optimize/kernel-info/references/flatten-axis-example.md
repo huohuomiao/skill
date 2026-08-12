@@ -71,8 +71,7 @@ def flatten_wrapper(input):
     num_blocks_h = triton.cdiv(H, BLOCK_H)
     num_blocks_w = triton.cdiv(W, BLOCK_W)
     total_blocks = num_blocks_n * num_blocks_h * num_blocks_w
-    core_num = torch.mlu.get_device_properties(0).multi_processor_count
-    grid = (min(total_blocks, core_num),)
+    grid = (total_blocks,)
     flatten_kernel[grid](
         input,
         output,
@@ -93,7 +92,7 @@ def flatten_wrapper(input):
 
 
 def test_flatten_wrapper():
-    inp = torch.randn((32, 64, 256), dtype=torch.float32, device="mlu")
+    inp = torch.randn((32, 64, 256), dtype=torch.float32, device="cuda")
     out = flatten_wrapper(inp)
     ref = torch.relu(inp)
     torch.testing.assert_close(out, ref)
@@ -103,7 +102,7 @@ def test_flatten_wrapper():
 代表性测例：
 
 ```python
-inp = torch.randn((32, 64, 256), dtype=torch.float32, device="mlu")
+inp = torch.randn((32, 64, 256), dtype=torch.float32, device="cuda")
 ```
 
 根据 wrapper 中的 kernel launch，`input_ptr` 绑定到 `inp`，所以 `input_ptr` 的真实 `shape` 是 `[32, 64, 256]`，真实 `stride` 是 `[16384, 256, 1]`。

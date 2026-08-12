@@ -142,7 +142,7 @@ def triton_reduce_sum(X):
     return Y
 
 def create_inputs():
-    raw_x = torch.rand(N, 2 * M, K, device='mlu', dtype=torch.float32)
+    raw_x = torch.rand(N, 2 * M, K, device='cuda', dtype=torch.float32)
     X = raw_x[:, ::2, :]  # stride_x1 = 2*K, M 轴非连续
     return X
 ```
@@ -235,10 +235,10 @@ def triton_transpose_add(A, B):
 M, N, K = 32, 64, 128
 
 def create_inputs():
-    raw_a = torch.rand(2 * M, N, K, device='mlu', dtype=torch.float32)
+    raw_a = torch.rand(2 * M, N, K, device='cuda', dtype=torch.float32)
     A = raw_a[::2, :, :]  # M 轴非连续
-    B = torch.rand(K, device='mlu', dtype=torch.float32)
-    C = torch.rand(M, N, device='mlu', dtype=torch.float32)
+    B = torch.rand(K, device='cuda', dtype=torch.float32)
+    C = torch.rand(M, N, device='cuda', dtype=torch.float32)
     return A, B, C
 ```
 

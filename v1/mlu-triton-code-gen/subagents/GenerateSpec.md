@@ -9,8 +9,8 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 | 来源 | 内容 |
 |------|------|
 | Step 3 输出 | `{输出存储路径}/KernelGen/step3_axis_fusion.json` |
-| 生成阶段原语约束 | `.claude/skills/share/mlu/references/primitives.md` |
-| MLU 平台约束 | `.claude/skills/share/mlu/references/platform-rules.md` |
+| 生成阶段原语约束 | `.claude/skills/share/gpu/references/primitives.md` |
+| RTX 3090 平台约束 | `.claude/skills/share/gpu/references/platform-rules.md` |
 
 ## 输出
 
@@ -22,13 +22,13 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 
 ### 步骤 1：读取 Step 3 结果和原始需求
 
-读取 step3_axis_fusion.json、共享原语清单和 MLU 平台规则，获取：
+读取 step3_axis_fusion.json、共享原语清单和 RTX 3090 平台规则，获取：
 - compute_formula
 - compute_note（description + torch_impl，用于生成 kernel.compute.note 并辅助理解计算逻辑）
 - io_block_mapping（包含 block_name, axis_size, contiguity, reduce_dim —— 形状/连续性已凝结于此，直接使用）
 - fusion_note（如有）
 - 接口签名
-- MLU 生成阶段允许使用的 Triton 原语
+- NVIDIA GPU 生成阶段允许使用的 Triton 原语
 
 ### 步骤 2：生成代码规范
 
@@ -115,8 +115,8 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 | `wrapper.block_params` | ✅ 必填 | BLOCK 参数默认值（整数形式） |
 
 **关键规则**：
-- **必须遵守** `.claude/skills/share/mlu/references/primitives.md` 中的生成阶段原语约束；不得在 spec 中推荐禁止生成的原语。
-- 仅在生成 MLU 目标代码时读取 `.claude/skills/share/mlu/references/platform-rules.md`，不要把平台规则复制回通用方案流程。
+- **必须遵守** `.claude/skills/share/gpu/references/primitives.md` 中的生成阶段原语约束；不得在 spec 中推荐禁止生成的原语。
+- 生成 NVIDIA GPU 目标代码时读取 `.claude/skills/share/gpu/references/platform-rules.md`，不要把平台规则复制回通用方案流程。
 - **aux_params** 只保留公共计算信息，如：
   - `pid_xx = tl.program_id(x)`
   - `xx_offset = pid_xx * BLOCK_XX`
@@ -144,10 +144,10 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 | 策略 | 适用场景 | 生成规范要求 |
 |------|----------|--------------|
 | `delayed_block_reduction` | 简单可结合归约（sum/prod/mean），循环遍历 reduce_dim 的多个 block，每次 load 得到仍包含 `reduce_block` 维度的 tile；循环内部不依赖已经归约成输出形状的结果 | **优先选择**。循环内只做 load、mask、类型转换和 elementwise 累积，累加器保留 `reduce_block` 维度；循环结束后只执行一次 `tl.sum`/`tl.reduce` 等块内归约得到输出形状，再 store |
-| `inline_block_reduction` | 每次循环内必须立即得到该 reduce block 的归约值，或后续计算依赖每个 chunk 的归约结果，或保留 reduce_block 维度会导致累加器过大/NRAM 风险 | 在循环内执行 `tl.sum`/`tl.max`/`tl.min` 等块内归约，并将 partial result 累积到输出形状的 accumulator |
+| `inline_block_reduction` | 每次循环内必须立即得到该 reduce block 的归约值，或后续计算依赖每个 chunk 的归约结果，或保留 reduce_block 维度会造成寄存器压力与 occupancy 风险 | 在循环内执行 `tl.sum`/`tl.max`/`tl.min` 等块内归约，并将 partial result 累积到输出形状的 accumulator |
 
-**MLU 归约原语选择**：
-- 查看 `.claude/skills/share/mlu/references/primitives.md`，优先使用对应直接原语。
+**GPU 归约原语选择**：
+- 查看 `.claude/skills/share/gpu/references/primitives.md`，优先使用对应直接原语。
 - 如果没有直接原语支持的归约，可尝试使用 直接原语组合算术操作 或者 使用 `tl.reduce` 自定义归约。
 - 使用直接原语组合算术操作时，示例：mean 操作可写为 `tl.sum(...) / count`。
 - 使用 `tl.reduce` 自定义归约时候，需要定义 combine 函数，combine 内只能使用允许的算术、比较、逻辑和 `tl.where`。例如：将 `final_reduction` 写为 `tl.reduce(acc, axis=..., combine_fn=combine函数)`，并在 `compute.note` 或 `reduce_loop.final_reduction` 中说明需要生成 `@triton.jit 乘法 combine 函数。
@@ -188,7 +188,7 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 
 #### 场景2：Transpose + Elementwise Add（无融合）
 
-对应示例：[generate_spec_trans_add.md](./examples/generate_spec_trans_add.md)
+对应示例：[generate_spec_transpose_elementwise.md](./examples/generate_spec_transpose_elementwise.md)
 
 #### 场景3：轴融合后（H+W -> HW）
 
@@ -196,7 +196,7 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 
 #### 场景4：矩阵转置（Transpose）
 
-对应示例：[generate_spec_matrix_trans.md](./examples/generate_spec_matrix_trans.md)
+对应示例：[generate_spec_matrix_transpose.md](./examples/generate_spec_matrix_transpose.md)
 
 **说明**：
 - 当计算公式包含转置操作（如 `X.T[m,n]`）时，需要在 `compute` 字段中指定 `formula: "tl.trans(x)"`

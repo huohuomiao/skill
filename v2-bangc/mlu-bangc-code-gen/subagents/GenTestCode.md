@@ -11,7 +11,7 @@
 - `step1_base_info.json` 与 `step1_io_shapes.json`（快速路径可标记 skipped）
 - `requirement.md`
 - 最近的 `EnvConfig/config.md`
-- `.claude/skills/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
 
 ## 输出
 
@@ -37,7 +37,7 @@
 
 ## 输出构建协议
 
-使用 EnvConfig 已确认的命令与路径。通用第一版：
+使用 EnvConfig 已确认的命令与路径。通用命令形式：
 
 ```bash
 cncc step6_test_code.mlu -o step6_test_code \

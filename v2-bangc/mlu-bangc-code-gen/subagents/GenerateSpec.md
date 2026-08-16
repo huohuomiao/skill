@@ -12,8 +12,8 @@
 - `step3_axis_fusion.json`
 - `requirement.md`
 - 最近的 `EnvConfig/config.md`
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
 
 上游任一 `ready_*` 为 false、存在 blocking/open issues 或 JSON 不一致时，返回对应阶段，不生成猜测规格。
 
@@ -118,7 +118,7 @@
 
 - 第三个参数始终是 bytes。
 - 非连续 tensor 用循环产生多条连续 segment；不要构造一个越过 padding 的 DMA。
-- 异步搬运只有在 `__memcpy_async`、同步和 buffer 生命周期均经共享资料确认后使用；第一版默认同步 `__memcpy`。
+- 异步搬运只有在 `__memcpy_async`、同步和 buffer 生命周期均经共享资料确认后使用；通用基线默认同步 `__memcpy`。
 
 ## Reduction Schema
 

@@ -185,6 +185,18 @@ def child_environment(layout: dict[str, str | None]) -> dict[str, str]:
     return env
 
 
+def read_neuware_version(layout: dict[str, str | None]) -> str | None:
+    root = layout.get("root")
+    if not root:
+        return None
+    version_file = Path(root) / "version.txt"
+    try:
+        value = version_file.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    return value or None
+
+
 def main() -> int:
     args = parse_args()
     source = args.source.expanduser().resolve()
@@ -203,6 +215,7 @@ def main() -> int:
 
     layout = locate_layout(cncc)
     env = child_environment(layout)
+    neuware_version = read_neuware_version(layout)
     try:
         version = run([cncc, "--version"], timeout=30.0, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -231,6 +244,7 @@ def main() -> int:
 
         print("CNCC_PATH=" + cncc)
         print("NEUWARE_ROOT=" + str(layout.get("root") or "UNRESOLVED"))
+        print("NEUWARE_VERSION=" + str(neuware_version or "UNRESOLVED"))
         print("CNRT_HEADER=" + str(layout.get("cnrt_header") or "UNRESOLVED"))
         print("BANG_HEADER=" + str(layout.get("bang_header") or "CNCC_RESOLVED_OR_UNRESOLVED"))
         print("LIBCNRT=" + str(layout.get("libcnrt") or "UNRESOLVED"))
@@ -273,6 +287,7 @@ def main() -> int:
             "cncc_path": cncc,
             "cncc_version": (version.stdout or version.stderr).strip(),
             "neuware_root": layout.get("root"),
+            "neuware_version": neuware_version,
             "cnrt_header": layout.get("cnrt_header"),
             "bang_header": layout.get("bang_header") or "resolved by cncc or unavailable",
             "libcnrt": layout.get("libcnrt"),

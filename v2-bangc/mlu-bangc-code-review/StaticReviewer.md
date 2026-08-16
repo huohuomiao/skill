@@ -6,9 +6,9 @@
 
 先读取：
 
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
-- 使用数学 intrinsic 时读取 `.claude/skills/share/mlu/references/libdevice.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
+- 使用数学 intrinsic 时读取 `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md`
 - `ref/common_error.md`
 
 共享清单不是当前 NeuWare 头文件的完整镜像。清单未列出的 API 标记为“需编译确认”，不得无证据删除。

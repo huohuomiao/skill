@@ -6,9 +6,9 @@
 
 执行前读取：
 
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
-- `.claude/skills/share/mlu/references/libdevice.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md`
 - `{output_dir}/EnvConfig/config.md`
 
 本策略不维护一份脱离 SDK 的完整 API 表。symbol、签名、dtype、长度和对齐必须来自目标环境证据。
@@ -83,11 +83,11 @@
 5. 尾块不会越界，也不会把 padding 写回逻辑输出。
 6. NaN/Inf、除零、溢出和舍入语义满足 requirement。
 
-任一项未知时，候选标记 `needs_server_verification`，第一版不改代码。
+任一项未知时，候选标记 `needs_current_environment_verification`，当前候选不改代码。
 
 ### 4. 确认 API
 
-按 `references/libdevice.md` 的证据优先级执行：
+按 `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md` 的证据优先级执行：
 
 - 检索当前 `bang.h` 声明。
 - 查同一 SDK 的官方 sample。

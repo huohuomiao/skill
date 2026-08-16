@@ -29,6 +29,7 @@ graph TD
 - 目标平台是 MLU590，设备侧语言是 BANG C，主机侧运行时是 CNRT，编译器是 CNCC。
 - 保留用户提供的算子语义、接口、shape、stride、dtype、别名关系和误差阈值；不得为了通过测试改写需求。
 - 不根据 `MLU590` 营销名称猜测 CNCC 架构参数、片上存储容量、核心数或 intrinsic 支持。只使用环境探测或用户提供且已验证的值。
+- 2026-08-15 已在 MLU590-M9DG 上验证 `compute_50`/`mtp_592`、CNRT 属性、CNPerf 和 MLISA 链路；将其作为可追溯兼容性基线，不得覆盖当前服务器的动态探测结果。
 - 静态生成可以在 CPU 环境完成；编译通过、精度通过和性能数据必须来自真实可用的 MLU 执行环境。
 - 禁止把 CPU fallback、CNRT 调用绕过、空 kernel 或跳过 kernel 当作 BANG C 修复结果。
 - 所有性能比较必须使用相同输入、相同编译配置、相同计时范围和相同执行后端。
@@ -45,19 +46,34 @@ graph TD
 
 若用户未指定 `output_dir`，使用当前目录下的 `output_mlu_bangc_main`。
 
+### Skill 根目录解析
+
+所有 Skill 内部引用统一通过 `BANGC_SKILL_ROOT` 解析：
+
+1. 如果调用方显式提供 `BANGC_SKILL_ROOT`，先将它解析为绝对路径，并验证 `share/mlu`、`mlu-bangc-main/SKILL.md`、`mlu-bangc-code-gen/SKILL.md`、`mlu-bangc-code-review/SKILL.md` 和 `mlu-bangc-optimize/SKILL.md` 均位于该根下。显式根无效时直接 blocked，不再回退猜测。
+2. 未显式提供时，取当前已加载的 `mlu-bangc-main/SKILL.md` 所在目录的父目录，并以同样方式验证。
+3. 验证失败时立即停止，报告已尝试的绝对路径；不把仓库根、`output_dir` 或当前工作目录猜为 Skill 根。
+
+该规则同时兼容顶层为 `mlu-bangc-*`/`share` 的扁平开发布局，以及它们位于 `.claude/skills` 下的安装布局。下列命令中的变量必须已按上述规则定位并导出：
+
+```bash
+export BANGC_SKILL_ROOT="<已验证的绝对 Skill 根目录>"
+```
+
 ## 运行环境选择
 
 所有任务开始前，先顺序执行：
 
 ```bash
-python3 .claude/skills/share/mlu/runtime/get_device_info.py
-python3 .claude/skills/share/mlu/runtime/test_env_code.py
+python3 "${BANGC_SKILL_ROOT}/share/mlu/runtime/get_device_info.py"
+python3 "${BANGC_SKILL_ROOT}/share/mlu/runtime/test_env_code.py"
 ```
 
 判定规则：
 
 - 两个脚本均以退出码 `0` 完成时，记录 `execution_backend=local` 和 `target_verified=true`。
-- 任一脚本失败时，在当前 `JOB_ID` 下通过 `.claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 向 MLU590 Worker 顺序提交同一组检查；禁止新建 Job 绕过当前工作流。
+- 任一脚本失败且当前受控 Job 提供非空 `JOB_ID` 时，通过 `${BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 向 MLU590 Worker 顺序提交同一组检查；禁止新建 Job 绕过当前工作流。
+- `JOB_ID` 未设置代表当前不是受控 Job：本地检查成功时不构成警告；本地检查失败时不尝试 Worker，记录 `execution_backend=unavailable` 与真实原因。
 - Worker 上两个脚本均成功时，记录 `execution_backend=worker` 和 `target_verified=true`。
 - 本地与 Worker 均不可用时，停止所有依赖 MLU 运行结果的步骤，保存真实 stdout/stderr，并报告阻断原因。
 - 不得通过 Worker 安装、升级或删除依赖，也不得修改 Worker 的全局环境、NeuWare/CNToolkit、驱动或系统路径。
@@ -65,17 +81,17 @@ python3 .claude/skills/share/mlu/runtime/test_env_code.py
 环境检查的 Worker 命令：
 
 ```bash
-python3 .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py \
+python3 "${BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py" \
   --task-type custom \
   --workdir <仓库根目录绝对路径> \
   --timeout-sec 600 \
-  --command "python3 .claude/skills/share/mlu/runtime/get_device_info.py && python3 .claude/skills/share/mlu/runtime/test_env_code.py"
+  --command "python3 '${BANGC_SKILL_ROOT}/share/mlu/runtime/get_device_info.py' && python3 '${BANGC_SKILL_ROOT}/share/mlu/runtime/test_env_code.py'"
 ```
 
 后续动态步骤如需 Worker，使用：
 
 ```bash
-python3 .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py \
+python3 "${BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py" \
   --task-type {compile|accuracy|performance|custom} \
   --workdir <绝对路径> \
   --timeout-sec <正整数秒数> \
@@ -89,7 +105,8 @@ python3 .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py
 分发 subagent，要求其严格执行：
 
 ```text
-读取 .claude/skills/mlu-bangc-main/subagents/EnvConfig.md，完成 MLU590 BANG C/CNRT 环境验证。
+读取 {BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/EnvConfig.md，完成 MLU590 BANG C/CNRT 环境验证。
+输入：BANGC_SKILL_ROOT={BANGC_SKILL_ROOT}
 输入：output_dir={output_dir}
 输出：{output_dir}/EnvConfig/config.md 和 runtime_info.txt
 ```
@@ -101,7 +118,8 @@ python3 .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py
 分发 subagent，要求其严格执行：
 
 ```text
-读取 .claude/skills/mlu-bangc-main/subagents/Extractor.md，抽取算子需求。
+读取 {BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/Extractor.md，抽取算子需求。
+输入：BANGC_SKILL_ROOT={BANGC_SKILL_ROOT}
 输入：user_input={user_input}
 输入：output_dir={output_dir}
 输入：env_config={output_dir}/EnvConfig/config.md
@@ -132,7 +150,7 @@ Skill(
 - `{output_dir}/KernelGen/bangc_code_fix.mlu`：完整 BANG C kernel、CNRT host launcher/reference/test/benchmark，经 code-review 修复后的版本。
 - `{output_dir}/KernelGen/bangc_report.md`：编译命令、精度证据、优化前性能基线与证据来源。
 
-继续前必须检查两份产物存在且可读。若报告显示 `compile_pass=false`、`accuracy_pass=false`、`blocked=true` 或 `target_verified=false`，不得进入会声称真机成功的优化流程；返回 code-gen/review 修复或报告真实阻断。
+继续前必须检查两份产物存在且可读。只有 `bangc_report.md` 明确给出并同时满足 `passed=true`、`blocked=false`、`compile_pass=true`、`accuracy_pass=true`、`target_verified=true` 才能进入性能优化；任一字段缺失、不是布尔真值或相互矛盾，均不得进入优化。此时返回 code-gen/review 修复，或报告真实阻断。
 
 ## 步骤 4：性能优化
 

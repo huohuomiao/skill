@@ -5,22 +5,58 @@
 ## 目录
 
 - 环境与证据
+- 2026-08-15 真机审计基线
 - 源码与编译
 - CNRT host 生命周期
 - BANG C 执行映射
 - 存储层次与搬运
 - 边界、对齐与数值
 - 性能测量与优化
-- 第一版待校准项
+- 第二版动态校准规则
 
 ## 环境与证据
 
 1. 动态执行前读取 `{output_dir}/EnvConfig/config.md`。
-2. `execution_backend=local` 时直接运行；`worker` 时通过 `.claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步提交。
-3. 环境探测只使用 `.claude/skills/share/mlu/runtime/get_device_info.py` 与 `test_env_code.py`；smoke source 是同目录 `bangc_vector_add.mlu`。
-4. 只有真实 MLU590 上的 CNCC 编译、binary 执行和 reference 对比全部成功，才能写 `target_verified=true`。
-5. 静态审查不能替代编译；编译不能替代运行；运行成功不能替代精度；一次耗时不能替代稳定 benchmark。
-6. 记录设备原始型号、CNCC/CNRT 版本、编译命令、环境变量来源和 stdout/stderr。未检测项写 `N/A` 或 `UNAVAILABLE`。
+2. 先按主 Skill 规则验证 `BANGC_SKILL_ROOT`；所有共享资源通过 `{BANGC_SKILL_ROOT}/...` 引用，不假设扁平开发布局或 `.claude/skills` 安装布局。
+3. `execution_backend=local` 时直接运行；`worker` 时通过 `{BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步提交。
+4. 基础环境门禁只运行 `{BANGC_SKILL_ROOT}/share/mlu/runtime/get_device_info.py` 与同目录的 `test_env_code.py`；smoke source 是 `bangc_vector_add.mlu`。这两个脚本未采集的 CNRT 属性必须写 `N/A`，不得把下表的审计 profile 伪装成本次动态探测值。
+5. 只有真实 MLU590 上的 CNCC 编译、binary 执行和 reference 对比全部成功，才能写 `target_verified=true`。
+6. 静态审查不能替代编译；编译不能替代运行；运行成功不能替代精度；一次耗时不能替代稳定 benchmark。
+7. 记录设备原始型号、CNCC/CNRT 版本、编译命令、环境变量来源和 stdout/stderr。未检测项写 `N/A` 或 `UNAVAILABLE`。
+
+## 2026-08-15 真机审计基线
+
+下表来自 MLU590-M9DG 真机编译、运行、CNRT 属性 probe、CNPerf 和 CNCC 中间产物证据。它用于识别已知可用组合，不是新服务器的默认值。
+
+| 类别 | 已验证基线 |
+|---|---|
+| 设备 | `MLU590-M9DG`，1 卡，FULL/Default，80 GiB，Firmware `v1.1.1`，Driver/CNMON `v6.5.26` |
+| 拓扑 | 8 clusters × 4 MLU cores = 32 cores |
+| 片上存储 | `cnrtAttrNramSizePerMcore=524288`，`cnrtAttrWramSizePerMcore=524288`，`cnrtAttrSramSizePerMcore=2097152`；附件同时将最后一项描述为“每 Cluster”，scope 口径冲突，未经当前 `cnrt.h`/probe 确认前不用于 SRAM 预算 |
+| 调度属性原值 | MaxDim X/Y/Z = 65535/65535/65535，MaxClusterCountPerUnionTask = 32，MaxClusterPerUnionLimitTask = 8；仅保留 probe 原值，不直接导出 launch policy |
+| ISA/频率 | `cnrtAttrISAVersion=592`，multiple tensor processor = 1，IPU 1850 MHz，MEM 1800 MHz，5120-bit |
+| SDK | NeuWare `4.6.2`，根目录 `/usr/local/neuware`；基线机未设置 `NEUWARE_HOME`/`CNTOOLKIT_HOME` |
+| 编译器 | CNCC `5.6.2` / MLVM `1.3` / Clang `11.1.0`；CNAS `5.6.2` |
+| 头文件/库 | `cnrt.h` 在 SDK `include`，`bang.h` 在 `lib/clang/11.1.0/include`，`libcnrt.so` 解析到 `libcnrt.so.7.6.1` |
+| architecture | `--bang-arch=compute_50` 等价于 `--bang-mlu-arch=mtp_592`；两种显式参数与 CNCC 默认路径均真机通过 |
+| 链接 | `-lcnrt -lstdc++ -lm -lpthread` 在已审计单文件 `.mlu` 链路通过 |
+| CNRT | `cnrtSuccess=0`；SDK 已定义 `CNRT_CHECK`；Queue API 为 `cnrtQueueCreate/Sync/Destroy` |
+| function type | `cnrtFuncTypeBlock=1` 且 Union1/2/4/8/16 枚举均存在；不代表它们对任意 kernel 都合法或更快 |
+| notifier | `cnrtNotifierCreate/Destroy/PlaceNotifier/NotifierDuration/NotifierElapsedTime` 存在；仅该次 vector-add 扩展 smoke 的实测 median 为 31 µs，不是其他算子的性能阈值 |
+| BANG C | `__mlu_global__`、`__nram__/__wram__/__sram__`、`taskId/taskDim`、`GDRAM2NRAM/NRAM2GDRAM` 编译通过 |
+| intrinsic | float 版 `__bang_add(dst, src0, src1, uint32_t elem_count)` 编译运行通过 |
+| CNPerf | `cnperf-cli 6.6.1`，`record --pmu --replay_mode=kernel` + `kernel` 链路通过；Visible Cluster 8/8 仅是该次审计报告的 provenance，不导出通用 launch 决策 |
+| cnpapi | 仅发现头文件，未发现独立可执行文件；当前 profiling 链路使用 `cnperf-cli`，不得假定存在 `cnpapi` binary |
+| CNCC 产物 | `-S`、`-save-temps`、`-emit-llvm`、`--bang-device-only`、`--bang-cnbin-only`、`--bang-fatbin-only` 已验证；产出 `.s/.mlui/.bc/.o/.cnfatbin` |
+| MLISA | device assembly 包含 `.mlisa 5.0`、`.arch mtp_592` 和 `CNCC MLISA Back-End` |
+| 精度 | 该次 vector-add 审计中 max_diff=0，0/1/257/1000/65536 等边界用例全部通过；不替代其他算子的 requirement/误差阈值 |
+
+覆盖规则：
+
+1. 当前 `get_device_info.py`、`test_env_code.py`、`cncc --help`/版本、可用的当前 CNRT probe 和原始 profiler 输出的优先级高于本表。
+2. `baseline_match` 只表示当前原始证据确认 exact device model、Firmware、Driver/CNMON、NeuWare 和 CNCC 均与本表相同；缺任一身份字段时为 `unknown`，任一不同时为 `false`。它不表示表中每个属性都在本次重新探测过。
+3. 拓扑、NRAM/WRAM、ISA、MaxDim 和 Union 属性若不是本次 probe 结果，只能以 `source=audited_profile_2026-08-15` 作为候选证据；不得写成 `current_probe`。SRAM scope 冲突项即使 profile 匹配也只能保留原始名和值。
+4. 只有 `baseline_match=true` 时，才能将表中非冲突值作为 tile/function type/arch 候选；即使兼容，仍需当前真机编译、精度和性能验证。
 
 ## 源码与编译
 
@@ -110,7 +146,7 @@ cncc input.mlu -o input \
 - 字节数统一以 `element_count * sizeof(dtype)` 推导，防止把元素数当字节数。
 - 尾块不能让 DMA 越界。可使用安全的实际长度，或在证明 API 对齐约束后采用 padding/分段策略。
 - `__memcpy_async`、流水和双缓冲只有在当前 SDK 支持并且同步依赖正确时使用。
-- 不在第一版硬编码 MLU590 的 NRAM/WRAM/SRAM 容量；从环境事实或编译错误取得限制。
+- 不把 MLU590-M9DG 审计基线的 NRAM/WRAM/SRAM 容量无条件硬编码到新算子；优先从当前环境事实或编译错误取得限制。
 - tile 预算应包含所有同时存活的片上 buffer，而不是只统计一个输入。
 - 减小 tile 可解决片上容量溢出但会增加任务/搬运开销；增大 tile 必须重新验证边界、容量和性能。
 
@@ -127,9 +163,9 @@ cncc input.mlu -o input \
 
 ## 原语和数学函数
 
-- 生成或审查 BANG C intrinsic 前读取 `.claude/skills/share/mlu/references/primitives.md`。
-- 数学函数、fast/approximate 变体和 dtype 支持读取 `.claude/skills/share/mlu/references/libdevice.md`。
-- 性能替换策略读取 `.claude/skills/share/mlu/optimize/libdevice-opt.md`。
+- 生成或审查 BANG C intrinsic 前读取 `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`。
+- 数学函数、fast/approximate 变体和 dtype 支持读取 `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md`。
+- 性能替换策略读取 `{BANGC_SKILL_ROOT}/share/mlu/optimize/libdevice-opt.md`。
 - reference 文件中的清单不是头文件替代品。若清单与当前 `bang.h`/CNCC 编译结果冲突，以当前目标环境证据为准并记录差异。
 
 ## 性能测量与优化
@@ -138,25 +174,19 @@ cncc input.mlu -o input \
 - kernel-only 计时优先使用同一 queue 上的 CNRT notifier；记录 warmup、重复次数、统计量和计时单位。
 - host end-to-end 时间与 kernel-only 时间分开报告；不得用前者冒充后者。
 - 基线和候选保持相同输入、queue、数据驻留、编译参数与计时范围。
-- CNPerf 可用时读取 `.claude/skills/share/mlu/perf-analyzer/analyzer.sh` 的原始报告；解析器仅作辅助，原始报告是最终证据。
+- CNPerf 可用时读取 `{BANGC_SKILL_ROOT}/share/mlu/perf-analyzer/analyzer.sh` 的原始报告；解析器仅作辅助，原始报告是最终证据。
 - 优化顺序通常为：正确任务映射 → 连续/合并搬运 → 合理 tile → 减少中间 buffer → 适用 intrinsic → 流水/双缓冲。每步独立复测。
 - 如果性能未改善或精度退化，回退到上一份已验证 best-so-far。
 
-## 第一版待服务器校准项
+## 第二版动态校准规则
 
-以下信息不得在第一版写死；服务器审计后再更新：
+2026-08-15 基线已校准 architecture、主要 CNRT API、存储属性原值、CNPerf 命令与 MLISA 产物。第二版按以下规则使用：
 
-1. CNCC、CNRT、NeuWare/CNToolkit 与驱动的确切版本和安装布局。
-2. MLU590 对应的确切 CNCC architecture flag 及是否必须显式传入。
-3. cluster/core 数、taskDim 各维限制及 Block/Union function type 的适用范围。
-4. NRAM/WRAM/SRAM 容量、保留空间、对齐粒度和 DMA 长度约束。
-5. `bang.h` 中可用 `__bang_*`、异步搬运、同步原语及 dtype 签名。
-6. CNRT queue/notifier/错误 API 的当前拼写与行为。
-7. CNPerf CLI 版本、record/kernel 参数和输出格式。
-8. CNCC 汇编、MLISA、IR 与临时产物参数和文件命名。
-9. 实际链接所需库、host compiler ABI 与运行时库搜索路径。
-
-服务器未确认前，选择保守、可编译探测、失败即报告的路径，不用营销规格填补证据空白。
+1. 将 MLU590-M9DG + Firmware v1.1.1 + Driver/CNMON v6.5.26 + NeuWare 4.6.2 + CNCC 5.6.2 的组合标记为 `audited_baseline`，不将它泛化为所有 MLU590 变体。
+2. 在 `config.md` 记录 `baseline_match` 和差异；动态字段未探测时仍写 `N/A`。确需引用匹配 profile 的值时必须另记 `source=audited_profile_2026-08-15`，不得冒充当前探测。
+3. `compute_50`/`mtp_592`、Block/Union、tile 容量和 intrinsic 只是已审计候选；保留前必须通过当前 CNCC 编译、完整精度和同口径 benchmark。
+4. 对齐粒度、DMA 长度约束、异步搬运/同步原语的完整矩阵仍以当前头文件、sample 和最小 probe 为准。
+5. CNPerf 或 CNCC 产物接口变化时，保留原始 stderr，标记 `UNAVAILABLE`/部分成功，不把基线报告当成本次数据。
 
 ## 交付检查
 

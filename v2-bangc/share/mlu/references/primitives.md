@@ -1,12 +1,13 @@
 # BANG C 原语与生成约束
 
-本文件是 MLU590 BANG C 第一版的生成门禁，不是某一版 `bang.h` 的完整 API 清单。实际函数签名、dtype、长度和对齐限制必须以目标服务器的头文件、官方 sample 和 CNCC 编译结果为准。
+本文件是 MLU590 BANG C 第二版的生成门禁，不是某一版 `bang.h` 的完整 API 清单。实际函数签名、dtype、长度和对齐限制必须以目标服务器的头文件、官方 sample 和 CNCC 编译结果为准。2026-08-15 MLU590-M9DG 审计证据只作为已验证基线；当前动态证据优先。
 
 ## 状态定义
 
 | 状态 | 含义 | 生成规则 |
 |---|---|---|
 | 基础必需 | BANG C/CNRT 主链路依赖的稳定概念 | 可生成，但仍需真实编译 |
+| 审计基线确认 | 已在 MLU590-M9DG + CNCC 5.6.2 上验证 | 可作为候选；版本/型号不匹配时降级为条件使用 |
 | 条件使用 | 名称常见但签名/约束可能随 SDK 或 dtype 变化 | 只有源码、头文件或服务器审计确认后生成 |
 | 禁止迁移残留 | 属于 Triton/CUDA 或无法映射 | 不得出现在最终 `.mlu` |
 
@@ -20,7 +21,7 @@
 | `__wram__` | 条件使用 | 特定计算/权重片上空间；不能无依据替代 NRAM |
 | `__sram__` | 条件使用 | cluster 共享空间；必须明确同步与所有权 |
 
-禁止在第一版硬编码三类片上存储的容量、保留空间或对齐值。
+已审计容量见 `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`。不得把该基线容量、保留空间或对齐值无条件写入新算子。
 
 ## 任务索引内建变量
 
@@ -45,11 +46,11 @@
 
 ## 向量计算
 
-以下名称已出现在仓库现有 BANG C 依赖审计或官方 sample 证据中，但第一版不宣称支持所有 dtype/长度：
+以下名称已出现在 BANG C 审计或官方 sample 证据中，但第二版不宣称支持所有 dtype/长度：
 
 | 原语族 | 状态 | 建议用途 |
 |---|---|---|
-| `__bang_add` | 条件使用 | NRAM 向量逐元素加法 |
+| `__bang_add` | 审计基线确认 | float 原型已确认为 `__bang_add(float *dst, const float *src0, const float *src1, uint32_t elem_count)`；其他 dtype/版本仍需探测 |
 | `__bang_sub` | 条件使用 | NRAM 向量逐元素减法 |
 | `__bang_add_scalar` | 条件使用 | 向量与标量相加 |
 | `__bang_floor` | 条件使用 | 向量 floor |
@@ -73,14 +74,14 @@
 - reduction 必须定义 axis、初值、空输入和累加 dtype。
 - `__bang_sumpool` 等专用原语不是通用 `sum(axis=...)` 的无条件替代；布局与窗口不匹配时不得使用。
 - 标量数学可使用当前 CNCC 支持的 C/C++ 数学函数；设备侧可用性仍需最小编译验证。
-- fast/approximate 变体读取 `references/libdevice.md` 和 `optimize/libdevice-opt.md`，且必须通过用户阈值。
+- fast/approximate 变体读取 `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md` 和 `{BANGC_SKILL_ROOT}/share/mlu/optimize/libdevice-opt.md`，且必须通过用户阈值。
 - 不把一个 dtype 编译成功外推为所有 dtype 均支持。
 
 ## dtype 规则
 
 | 需求 dtype | 保守源码表示 | 备注 |
 |---|---|---|
-| float32 | `float` | 第一版默认测试 dtype |
+| float32 | `float` | 第二版 smoke 默认 dtype |
 | float16 | `half` 或当前 `bang.h` 定义 | 必须由目标头文件确认 spelling 与 intrinsic 支持 |
 | int8/uint8 | `int8_t`/`uint8_t` | 包含正确标准头并检查提升语义 |
 | int16/uint16 | `int16_t`/`uint16_t` | 同上 |
@@ -92,14 +93,14 @@
 
 ## Host 侧 CNRT 原语
 
-以下属于 host runtime，不可在 device kernel 中调用：
+以下属于 host runtime，不可在 device kernel 中调用。2026-08-15 基线的确切 Queue 拼写是 `cnrtQueueCreate`/`cnrtQueueSync`/`cnrtQueueDestroy`，不是后缀 `Queue` 的旧变体。
 
 - `cnrtSetDevice`
 - `cnrtQueueCreate` / `cnrtQueueSync` / `cnrtQueueDestroy`
 - `cnrtMalloc` / `cnrtFree`
 - `cnrtMemcpy` 与 H2D/D2H 方向枚举
 - `cnrtDim3_t` / `cnrtFunctionType_t`
-- `cnrtNotifierCreate` / `cnrtPlaceNotifier` / `cnrtNotifierDuration`（性能阶段，需当前 SDK 确认）
+- `cnrtNotifierCreate` / `cnrtNotifierDestroy` / `cnrtPlaceNotifier` / `cnrtNotifierDuration` / `cnrtNotifierElapsedTime`（基线已验证，当前 SDK 仍需确认）
 
 每个返回码都要检查；不要重新定义 SDK 可能已有的 `CNRT_CHECK`。
 
@@ -124,4 +125,4 @@
 5. 在 MLU590 上与独立 reference 比较。
 6. 只有编译与精度通过后，才引入更强 intrinsic、异步搬运或流水。
 
-遇到未列出的原语时不得直接判定支持或不支持；将其标记为 `needs_server_verification` 并用最小 probe 校准第二版。
+遇到未列出的原语时不得直接判定支持或不支持；将其标记为 `needs_current_environment_verification` 并用当前环境的最小 probe 校准。

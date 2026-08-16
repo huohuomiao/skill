@@ -7,9 +7,19 @@ description: 面向 MLU590 的 BANG C/CNRT 算子性能优化工作流。用于�
 
 ## 概述
 
-优化一个完整、可独立编译运行的 BANG C `.mlu` 算子文件。流程保持“输入检查与 baseline → 五个开箱策略 → 性能证据驱动迭代 → 汇总输出”的 v1 结构。平台事实、编译环境、原语与采集工具统一读取 `.claude/skills/share/mlu/`；本 Skill 不复制或臆测硬件常量。
+优化一个完整、可独立编译运行的 BANG C `.mlu` 算子文件。流程保持“输入检查与 baseline → 五个开箱策略 → 性能证据驱动迭代 → 汇总输出”的 v1 结构。平台事实、编译环境、原语与采集工具统一读取 `{BANGC_SKILL_ROOT}/share/mlu/`；本 Skill 不复制或臆测硬件常量。
 
 没有真实 MLU590 执行证据时可以静态分析，但不得声称性能提升，不得填写推测的耗时、带宽、片上容量、Core/Cluster 数、架构 flag、CNPerf 指标或 MLISA 结论。
+
+## 布局解析规则
+
+所有 Skill 内部引用统一通过 `BANGC_SKILL_ROOT` 解析：
+
+1. 如果调用方显式提供 `BANGC_SKILL_ROOT`，先将它解析为绝对路径，并验证 `share/mlu`、`mlu-bangc-main/SKILL.md`、`mlu-bangc-code-gen/SKILL.md`、`mlu-bangc-code-review/SKILL.md` 和 `mlu-bangc-optimize/SKILL.md` 均位于该根下。显式根无效时直接 blocked，不再回退猜测。
+2. 未显式提供时，取当前已加载的 `SKILL.md` 所在目录的父目录，并以同样方式验证。
+3. 验证失败时立即停止，报告已尝试的绝对路径；不把仓库根、`output_dir` 或当前工作目录猜为 Skill 根。
+
+该规则同时兼容顶层为 `mlu-bangc-*`/`share` 的扁平开发布局，以及它们位于 `.claude/skills` 下的安装布局。文档中的 `{BANGC_SKILL_ROOT}/...` 必须先展开为已验证的绝对路径再读取或执行；运行 shell 示例前，将同一绝对值导出为环境变量 `BANGC_SKILL_ROOT`。
 
 ## 用法与交接
 
@@ -121,9 +131,9 @@ Host reference 时间仅用于背景，不作为设备 Kernel keep 门禁。
 agent = spawn_agent(
     agent_type="default",
     message=f"""
-读取 .claude/skills/mlu-bangc-optimize/utils/Optimizer.md，执行指定策略。
+读取 {BANGC_SKILL_ROOT}/mlu-bangc-optimize/utils/Optimizer.md，执行指定策略。
 策略名称：{strategy_name}
-策略文档：.claude/skills/mlu-bangc-optimize/{strategy_name}/strategy.md
+策略文档：{BANGC_SKILL_ROOT}/mlu-bangc-optimize/{strategy_name}/strategy.md
 工作目录：{strategy_workdir}
 严格遵守相同编译契约、精度门禁、真实 MLU590 benchmark 与 no-regression 回退。
 """,

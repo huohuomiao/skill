@@ -11,6 +11,16 @@ description: 面向 MLU590 的原生 BANG C/CNRT 算子代码生成 Skill。用�
 
 本 Skill 生成并验证初始 baseline，不负责穷举性能调优。保持原有分阶段编排与中间产物契约，只把语言、运行时、代码模板和测试链路替换为 BANG C/CNRT。
 
+## 布局解析规则
+
+所有 Skill 内部引用统一通过 `BANGC_SKILL_ROOT` 解析：
+
+1. 如果调用方显式提供 `BANGC_SKILL_ROOT`，先将它解析为绝对路径，并验证 `share/mlu`、`mlu-bangc-main/SKILL.md`、`mlu-bangc-code-gen/SKILL.md`、`mlu-bangc-code-review/SKILL.md` 和 `mlu-bangc-optimize/SKILL.md` 均位于该根下。显式根无效时直接 blocked，不再回退猜测。
+2. 未显式提供时，取当前已加载的 `SKILL.md` 所在目录的父目录，并以同样方式验证。
+3. 验证失败时立即停止，报告已尝试的绝对路径；不把仓库根、`output_dir` 或当前工作目录猜为 Skill 根。
+
+该规则同时兼容顶层为 `mlu-bangc-*`/`share` 的扁平开发布局，以及它们位于 `.claude/skills` 下的安装布局。文档中的 `{BANGC_SKILL_ROOT}/...` 必须先展开为已验证的绝对路径再读取或执行；运行 shell 示例前，将同一绝对值导出为环境变量 `BANGC_SKILL_ROOT`。
+
 ## 多阶段流程
 
 | Stage | 名称 | 执行方式 | 进入条件 |
@@ -51,8 +61,8 @@ is_bangc: true | false
 平台事实只从以下共享资源读取：
 
 ```text
-.claude/skills/share/mlu/references/platform-rules.md
-.claude/skills/share/mlu/references/primitives.md
+{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md
+{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md
 ```
 
 ## 输出
@@ -100,7 +110,7 @@ bangc_report.md
 读取：
 
 ```text
-.claude/skills/mlu-bangc-code-gen/subagents/ExtractBaseInfo.md
+{BANGC_SKILL_ROOT}/mlu-bangc-code-gen/subagents/ExtractBaseInfo.md
 ```
 
 输入 `requirement.md`；输出 `step1_base_info.json` 和同源的 `step1_io_shapes.json`。抽取接口、C 类型/dtype、shape/stride/layout、数学合同、容差、测试矩阵、已有 BANG C 结构和未决问题，不设计 tile 或 task 数。
@@ -155,15 +165,21 @@ Skill(
 )
 ```
 
-code-review 负责静态检查、按 EnvConfig 选择 local/Worker、运行 `cncc`、执行 binary、修复并重新验证，并固定写入同一 `KernelGen/` 下的 `bangc_code_fix.mlu` 与 `bangc_report.md`。主 Skill 必须读取报告末尾的 `passed`、`blocked`、`target_verified`、`final_code_path`；不能仅凭文件存在判定成功。确认两个产物存在且非空后：
+code-review 负责静态检查、按 EnvConfig 选择 local/Worker、运行 `cncc`、执行 binary、修复并重新验证，并固定写入同一 `KernelGen/` 下的 `bangc_code_fix.mlu` 与 `bangc_report.md`。主 Skill 必须读取报告末尾的 `passed`、`blocked`、`target_verified`、`compile_pass`、`accuracy_pass`、`final_code_path`；不能仅凭文件存在判定成功。确认两个产物存在且非空后：
 
 1. 将最终 fix 源码逐字节规范化为 `KernelGen/bangc_code_fix.mlu`。
 2. 将真实 review 事实规范化为 `KernelGen/bangc_report.md`。
-3. 原样保留 `passed`、`blocked`、`target_verified`、所有 gate、命令和诊断；不得把未运行或失败改为成功。
+3. 原样保留 `passed`、`blocked`、`target_verified`、`compile_pass`、`accuracy_pass`、所有 gate、命令和诊断；不得把未运行或失败改为成功。
 
 ## 编译协议
 
-使用 EnvConfig 中已经验证的 `cncc`、`neuware_home`、库路径和完整架构 flag。第一版通用形式为：
+使用 EnvConfig 中已经验证的 `cncc`、`neuware_root`、库路径和完整架构 flag。若 `neuware_root` 不是 `N/A`，执行编译命令前必须将其原样导出为 `NEUWARE_HOME`：
+
+```bash
+export NEUWARE_HOME="<EnvConfig.neuware_root>"
+```
+
+通用形式为：
 
 ```bash
 cncc step6_test_code.mlu -o step6_test_code \
@@ -256,6 +272,8 @@ cncc step6_test_code.mlu -o step6_test_code \
 - passed: true | false
 - blocked: true | false
 - target_verified: true | false
+- compile_pass: true | false | unavailable
+- accuracy_pass: true | false | unavailable
 - final_code_path: <absolute path to KernelGen/bangc_code_fix.mlu> | N/A
 ```
 

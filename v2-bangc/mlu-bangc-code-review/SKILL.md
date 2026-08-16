@@ -9,11 +9,21 @@ description: 面向 MLU590 的 BANG C/CNRT 算子代码验证与最小修复工�
 
 验证一个完整、可独立编译运行的 BANG C `.mlu` 文件。文件必须包含设备 Kernel、Host 侧 CNRT 启动代码、独立 reference 与可自动失败的精度测试。先编译和运行原文件；只有门禁失败时才进入静态检查和有界动态修复。
 
+## 布局解析规则
+
+所有 Skill 内部引用统一通过 `BANGC_SKILL_ROOT` 解析：
+
+1. 如果调用方显式提供 `BANGC_SKILL_ROOT`，先将它解析为绝对路径，并验证 `share/mlu`、`mlu-bangc-main/SKILL.md`、`mlu-bangc-code-gen/SKILL.md`、`mlu-bangc-code-review/SKILL.md` 和 `mlu-bangc-optimize/SKILL.md` 均位于该根下。显式根无效时直接 blocked，不再回退猜测。
+2. 未显式提供时，取当前已加载的 `SKILL.md` 所在目录的父目录，并以同样方式验证。
+3. 验证失败时立即停止，报告已尝试的绝对路径；不把仓库根、`output_dir` 或当前工作目录猜为 Skill 根。
+
+该规则同时兼容顶层为 `mlu-bangc-*`/`share` 的扁平开发布局，以及它们位于 `.claude/skills` 下的安装布局。文档中的 `{BANGC_SKILL_ROOT}/...` 必须先展开为已验证的绝对路径再读取或执行；运行 shell 示例前，将同一绝对值导出为环境变量 `BANGC_SKILL_ROOT`。
+
 平台事实统一读取：
 
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
-- `.claude/skills/share/mlu/references/libdevice.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/libdevice.md`
 - 当前工作流最近的 `{output_dir}/EnvConfig/config.md`
 
 不得根据“MLU590”名称猜测 `cncc` 架构参数、片上容量、Cluster/Core 数、任务类型限制或 intrinsic 支持。未从 EnvConfig、已安装头文件、`cncc --help`、编译日志或真实执行取得的事实写 `N/A`。
@@ -46,7 +56,7 @@ description: 面向 MLU590 的 BANG C/CNRT 算子代码验证与最小修复工�
 
 从输入目录向上读取最近的 `EnvConfig/config.md`，至少取得：
 
-- `execution_backend=local|worker`
+- `execution_backend=local|worker|unavailable`
 - 目标设备是否真实确认为 MLU590
 - `cncc` 绝对路径和版本
 - NeuWare/CNToolkit 根、运行库路径
@@ -63,13 +73,13 @@ description: 面向 MLU590 的 BANG C/CNRT 算子代码验证与最小修复工�
 
 - 不要求 `${NEUWARE_HOME}/include/bang.h` 必然存在；新版工具链可能由 `cncc` 从 Clang resource include 定位 `bang.h`。
 - 使用 C++ 标准库、数学库或线程库的单文件测试必须带 EnvConfig 已验证的链接项；当前审计表明常见组合需要 `-lstdc++ -lm -lpthread`，但最终以真实链接命令为准。
-- 不重定义已由当前 `cnrt.h` 提供的 `CNRT_CHECK`。旧代码中的 `CNRT_RET_SUCCESS` 仅在头文件确认存在时可用；当前已审计栈使用 `cnrtSuccess`/头文件宏，修复前先以安装头文件为证据。
+- 不重定义已由当前 `cnrt.h` 提供的 `CNRT_CHECK`，也不生成或保留旧常量 `CNRT_RET_SUCCESS`。优先使用当前头文件的错误检查宏，或以返回码非零判失败；不要让成功判断依赖版本特定枚举拼写。
 - 架构 flag 只来自 EnvConfig、显式环境配置或 `cncc --help`/官方构建脚本，不凭设备营销名推导。
 
 Worker 命令必须在当前 `JOB_ID` 下前台同步执行：
 
 ```bash
-python .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py \
+python "${BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py" \
   --workdir <absolute_workdir> \
   --command "<compile-or-run-command>" \
   --timeout-sec 1800 \
@@ -77,6 +87,8 @@ python .claude/skills/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py 
 ```
 
 Worker wrapper 退出码 `2` 代表基础设施错误；本地命令按真实 stderr/工具输出分类。
+
+若 `execution_backend=unavailable`，只执行步骤 2 的完整性扫描和步骤 5 的静态审查；不得进入编译、运行、精度或动态修复步骤。仍输出静态候选 `bangc_code_fix.mlu` 与真实报告，但最终必须记录 `passed=false`、`blocked=true`、`target_verified=false`，编译、运行和精度字段均为 `unavailable`。
 
 ## 步骤 2：完整性扫描
 
@@ -92,7 +104,7 @@ Worker wrapper 退出码 `2` 代表基础设施错误；本地命令按真实 st
 
 ## 步骤 3：编译并运行原文件
 
-在临时构建目录中使用 EnvConfig 命令编译，保存完整命令、退出码、stdout/stderr。编译成功后运行 binary，保存：
+仅在 `execution_backend=local|worker` 时，在临时构建目录中使用 EnvConfig 命令编译，保存完整命令、退出码、stdout/stderr。编译成功后运行 binary，保存：
 
 | 门禁 | 通过条件 |
 | --- | --- |
@@ -119,7 +131,7 @@ Worker wrapper 退出码 `2` 代表基础设施错误；本地命令按真实 st
 agent = spawn_agent(
     agent_type="default",
     message=f"""
-读取 .claude/skills/mlu-bangc-code-review/StaticReviewer.md。
+读取 {BANGC_SKILL_ROOT}/mlu-bangc-code-review/StaticReviewer.md。
 审查 {input_code_path}，输出 {fixed_code_path} 并追加 {report_path}。
 保留 reference、测试、容差、Host API 与自定义 BANG C Kernel。
 """,
@@ -151,7 +163,9 @@ agent = spawn_agent(
 passed: true|false
 blocked: true|false
 target_verified: true|false
+compile_pass: true|false|unavailable
+accuracy_pass: true|false|unavailable
 final_code_path: <absolute path>
 ```
 
-只有 `passed=true`、`blocked=false`、`target_verified=true` 才能称为“已在 MLU590 验证”。
+只有 `passed=true`、`blocked=false`、`target_verified=true`、`compile_pass=true`、`accuracy_pass=true` 同时成立时才能称为“已在 MLU590 验证”。

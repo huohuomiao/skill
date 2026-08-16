@@ -100,7 +100,7 @@ result.json
   "strategy": "name",
   "status": "success|failed|not_applicable|not_measured",
   "decision": "keep|revert|not_measured",
-  "execution_backend": "local|worker|unknown",
+  "execution_backend": "local|worker|unavailable",
   "target_verified": false,
   "compile": {"same_contract": true, "pass": false},
   "correctness": {"pass": false, "atol": null, "rtol": null, "max_abs_error": null, "max_rel_error": null},

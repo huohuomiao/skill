@@ -2,7 +2,7 @@
 set -uo pipefail
 
 if [[ $# -lt 2 ]]; then
-  echo "Usage: bash analyzer.sh <output_dir> <executable> [artifact_dir] [program args ...]" >&2
+  echo "Usage: bash analyzer.sh <output_dir> <executable> [--artifact-dir <dir>] [--] [program args ...]" >&2
   exit 2
 fi
 
@@ -11,8 +11,19 @@ input_binary="$2"
 shift 2
 
 artifact_dir="$output_dir"
-if [[ $# -gt 0 && -d "$1" ]]; then
+if [[ $# -gt 0 && "$1" == "--artifact-dir" ]]; then
+  if [[ $# -lt 2 || ! -d "$2" ]]; then
+    echo "ERROR: --artifact-dir requires an existing directory" >&2
+    exit 2
+  fi
+  artifact_dir="$2"
+  shift 2
+elif [[ $# -gt 0 && "$1" != "--" && -d "$1" ]]; then
+  # Backward-compatible positional form. Prefer --artifact-dir for new calls.
   artifact_dir="$1"
+  shift
+fi
+if [[ $# -gt 0 && "$1" == "--" ]]; then
   shift
 fi
 program_args=("$@")
@@ -57,6 +68,8 @@ run_stderr="$output_dir/run_stderr.log"
 cnmon_output="$output_dir/cnmon.txt"
 cnperf_rep="$output_dir/kernel.cnperf-rep"
 cnperf_kernel="$output_dir/kernel_cnperf.txt"
+cnperf_version="$output_dir/cnperf_version.txt"
+cnperf_info="$output_dir/cnperf_info.txt"
 artifact_json="$output_dir/cncc_artifacts.json"
 
 : >"$status_file"
@@ -82,6 +95,10 @@ fi
 cnperf_status="PARTIAL_NO_CNPERF"
 if cnperf_path="$(find_tool cnperf-cli)"; then
   printf 'CNPERF=AVAILABLE:%s\n' "$cnperf_path" | tee -a "$status_file"
+  "$cnperf_path" --version >"$cnperf_version" 2>&1
+  printf 'CNPERF_VERSION_EXIT_CODE=%s\n' "$?" | tee -a "$status_file"
+  "$cnperf_path" info >"$cnperf_info" 2>&1
+  printf 'CNPERF_INFO_EXIT_CODE=%s\n' "$?" | tee -a "$status_file"
   "$cnperf_path" record --pmu --replay_mode=kernel -o "$cnperf_rep" \
     "$input_binary" "${program_args[@]}" \
     >"$output_dir/cnperf_record_stdout.log" \
@@ -125,6 +142,8 @@ fi
 
 printf 'STATUS=%s\n' "$cnperf_status" | tee -a "$status_file"
 printf 'RAW_CNPERF_REPORT=%s\n' "$cnperf_kernel" | tee -a "$status_file"
+printf 'CNPERF_VERSION_REPORT=%s\n' "$cnperf_version" | tee -a "$status_file"
+printf 'CNPERF_INFO_REPORT=%s\n' "$cnperf_info" | tee -a "$status_file"
 printf 'CNCC_ARTIFACTS=%s\n' "$artifact_json" | tee -a "$status_file"
 
 echo "=== DONE: $cnperf_status ==="

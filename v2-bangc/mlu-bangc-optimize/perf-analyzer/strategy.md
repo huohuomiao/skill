@@ -15,7 +15,7 @@
 读取最近的 `{output_dir}/EnvConfig/config.md` 并沿用：目标 MLU590、`cncc`、环境变量、完整编译命令和 `execution_backend`。
 
 - local：直接前台执行。
-- worker：通过 `mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步执行。
+- worker：通过 `{BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步执行。
 - EnvConfig 缺失、目标未确认或 infrastructure 失败：输出 blocked 报告，不改代码。
 
 禁止新建 Job、修改系统环境、安装/升级工具或用其他设备数据做 keep 决策。
@@ -46,11 +46,11 @@
 共享脚本契约为：
 
 ```bash
-bash .claude/skills/share/mlu/perf-analyzer/analyzer.sh \
-  <output_dir> <binary_or_command> [artifact_dir]
+bash "${BANGC_SKILL_ROOT}/share/mlu/perf-analyzer/analyzer.sh" \
+  <output_dir> <executable> [--artifact-dir <dir>] [--] [program args ...]
 ```
 
-本策略先自行使用 EnvConfig 编译 `.mlu`，通常把第二参数传为可执行 binary；只有确需包装完整逻辑调用时才传可复现命令。可选 `artifact_dir` 指向隔离的 CNCC 中间产物目录。若 `cnperf-cli` 不存在或子命令/参数与脚本不兼容：
+本策略先自行使用 EnvConfig 编译 `.mlu`，第二参数必须传入可执行 binary。可选 `--artifact-dir <dir>` 指向隔离的 CNCC 中间产物目录；用 `--` 明确分隔其余 binary 参数，尤其是 binary 的首个参数本身为目录时。脚本仍兼容旧的第三位置参数目录，但新调用必须采用显式选项。若 `cnperf-cli` 不存在或子命令/参数与脚本不兼容：
 
 - 保存版本/错误原文。
 - 标记 `cnperf_status=unavailable|partial|failed`。

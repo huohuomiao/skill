@@ -11,7 +11,7 @@ TraceBlockMapping 是 `mlu-bangc-code-gen` 的 Stage 2。它保留原阶段名�
 - `step1_base_info.json`
 - `step1_io_shapes.json`
 - `requirement.md`
-- `.claude/skills/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
 
 若 `ready_for_mapping=false`，停止并返回 blocking questions，不得设计映射。
 

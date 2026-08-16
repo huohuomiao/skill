@@ -11,8 +11,8 @@
 - `step1_base_info.json`
 - `step1_io_shapes.json`
 - `step2_block_mapping.json`
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
 
 ## 约束
 
@@ -109,7 +109,7 @@ y_nram --NRAM2GDRAM(valid*sizeof(T))--> y GDRAM
 {
   "enabled": true,
   "primitive": "__bang_add",
-  "evidence": "share/mlu/references/primitives.md and target bang.h",
+  "evidence": "{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md and target bang.h",
   "dtype": "float32",
   "length_expression": "TILE_ELEMS",
   "tail_strategy": "zero padded NRAM input; copy back valid elements only",
@@ -134,7 +134,7 @@ y_nram --NRAM2GDRAM(valid*sizeof(T))--> y GDRAM
 
 - `__wram__` 仅在算子/已确认 intrinsic 需要权重布局时使用，记录布局转换与 bytes。
 - `__sram__` 仅在共享规则确认 cluster 参与集合、可见性、同步和容量后使用。
-- 第一版 baseline 若不需要二者，显式写 `enabled=false`，不为“看起来更像 MLU 优化”而占用。
+- 通用 baseline 若不需要二者，显式写 `enabled=false`，不为“看起来更像 MLU 优化”而占用。
 - 任何跨 core/cluster 数据交换必须有真实同步原语和参与集合证据，否则回退为 task 独立方案或多 kernel。
 
 ## 转置片上重排

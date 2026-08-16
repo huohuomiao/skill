@@ -4,7 +4,7 @@
 
 依据真实 MLU590 correctness、notifier、CNPerf 与 CNCC/MLISA 证据，在最多十个候选内微调一个参数族。候选可涉及片上 tile、每 Task 工作量、任务规模/function type、向量处理长度、buffer 复用或流水级数；同轮不得同时改变多个族。
 
-平台限制读取 `.claude/skills/share/mlu/references/platform-rules.md`，不得硬编码 NRAM/SRAM/WRAM 容量、Core/Cluster 数、架构 flag 或 function type 约束。
+平台限制读取 `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`，不得硬编码 NRAM/SRAM/WRAM 容量、Core/Cluster 数、架构 flag 或 function type 约束。
 
 ## Step 1：提取配置与轴信息
 

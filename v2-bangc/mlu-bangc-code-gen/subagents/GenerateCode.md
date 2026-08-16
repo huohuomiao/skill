@@ -12,8 +12,8 @@
 - `step2_block_mapping.json`
 - `step3_axis_fusion.json`
 - `requirement.md`
-- `.claude/skills/share/mlu/references/platform-rules.md`
-- `.claude/skills/share/mlu/references/primitives.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/platform-rules.md`
+- `{BANGC_SKILL_ROOT}/share/mlu/references/primitives.md`
 
 若 spec 的 `ready_for_code` 不为 true 或 `unresolved` 非空，停止并返回 GenerateSpec，不生成猜测代码。
 

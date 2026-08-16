@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -65,6 +66,20 @@ def classify(path: Path) -> tuple[str | None, list[str]]:
     return None, markers
 
 
+def assembly_facts(path: Path) -> dict[str, str]:
+    text = read_text_prefix(path)
+    facts: dict[str, str] = {}
+    mlisa = re.search(r"(?m)^\s*\.mlisa\s+([^\s#]+)", text)
+    arch = re.search(r"(?m)^\s*\.arch\s+([^\s#]+)", text)
+    if mlisa:
+        facts["mlisa_version"] = mlisa.group(1)
+    if arch:
+        facts["arch"] = arch.group(1)
+    if "CNCC MLISA Back-End" in text:
+        facts["producer"] = "CNCC MLISA Back-End"
+    return facts
+
+
 def main() -> int:
     args = parse_args()
     artifacts: list[dict[str, object]] = []
@@ -87,6 +102,7 @@ def main() -> int:
                 "size_bytes": size,
                 "modified_ns": modified_ns,
                 "markers": markers,
+                "facts": assembly_facts(path) if kind == "assembly_or_mlisa" else {},
             }
         )
 

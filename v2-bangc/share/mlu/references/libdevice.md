@@ -9,7 +9,7 @@
 - 可安全识别的模式
 - dtype 与数值门禁
 - 最小探测
-- 第一版禁区
+- 第二版禁区
 
 ## 证据优先级
 
@@ -24,7 +24,7 @@
 
 ## 头文件发现
 
-不要只检查 `$NEUWARE_HOME/include/bang.h`。第一版需要兼容两类布局：
+不要只检查 `$NEUWARE_HOME/include/bang.h`。第二版继续兼容两类布局：
 
 ```text
 $NEUWARE_HOME/include/bang.h
@@ -104,7 +104,7 @@ probe_status: compile_pass | run_pass | unavailable
 
 规则：
 
-- `float32` 是第一版默认 smoke dtype，不代表所有 intrinsic 支持 float32。
+- `float32` 是第二版默认 smoke dtype，不代表所有 intrinsic 支持 float32。
 - `half`、bfloat16、整数和混合 dtype 的 spelling/提升规则由当前 SDK 确认。
 - 不生成 fp64 支持声明，除非服务器 probe 明确通过。
 - approximate 实现必须在最大误差之外同时考虑 `rtol`、NaN/Inf、接近零和极值输入。
@@ -139,9 +139,9 @@ probe 文件只用于证据，不得把编译失败的 symbol 写进正式候选
 6. 重新 benchmark；只有更快且精度通过才保留。
 7. 在报告中记录 symbol、证据来源、误差与前后耗时。
 
-具体策略读取 `.claude/skills/share/mlu/optimize/libdevice-opt.md`。
+具体策略读取 `{BANGC_SKILL_ROOT}/share/mlu/optimize/libdevice-opt.md`。
 
-## 第一版禁区
+## 第二版禁区
 
 以下均视为 Triton 残留或无证据推断：
 
@@ -152,6 +152,6 @@ probe 文件只用于证据，不得把编译失败的 symbol 写进正式候选
 - 把 scalar C math、device vector intrinsic 和 host `<cmath>` 当成同一调用域
 - 为获得性能而放宽 requirement 的误差阈值
 
-## 第二版校准输出
+## 持续校准输出
 
-服务器审计应返回当前 MLU590 环境中实际可用 symbol、原型、dtype、长度/对齐限制、官方 sample 位置以及最小 probe 结果。第二版再把已确认项从“条件使用”提升为稳定生成规则。
+每次新服务器校准都应返回当前 MLU590 环境中实际可用 symbol、原型、dtype、长度/对齐限制、官方 sample 位置以及最小 probe 结果。2026-08-15 已审计的 float `__bang_add` 原型可作为 MLU590-M9DG + CNCC 5.6.2 候选；当前型号或工具链不匹配时必须降级为条件使用并重新 probe。

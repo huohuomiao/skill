@@ -26,7 +26,7 @@
 读取最近的 `{output_dir}/EnvConfig/config.md` 并在全部迭代中沿用同一 `execution_backend`。
 
 - `local`：在临时目录直接编译和运行。
-- `worker`：通过 `mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步执行。
+- `worker`：通过 `{BANGC_SKILL_ROOT}/mlu-bangc-main/subagents/scripts/submit_task_to_worker.py` 前台同步执行。
 - EnvConfig 缺失、目标未确认、编译器不可用或 Worker 基础设施失败：写 `blocked=true`，不猜测修复。
 
 ## 标准门禁序列
@@ -109,6 +109,8 @@
 passed: true
 blocked: false
 target_verified: true
+compile_pass: true
+accuracy_pass: true
 ```
 
 ### 失败
@@ -119,6 +121,8 @@ target_verified: true
 passed: false
 blocked: false
 target_verified: true|false
+compile_pass: true|false
+accuracy_pass: true|false|unavailable
 ```
 
 ### 阻塞
@@ -129,6 +133,8 @@ target_verified: true|false
 passed: false
 blocked: true
 target_verified: false
+compile_pass: false|unavailable
+accuracy_pass: unavailable
 ```
 
-总是记录 `final_code_path`、最后失败/阻塞门禁和可复现日志。
+总是记录 `compile_pass`、`accuracy_pass`、`final_code_path`、最后失败/阻塞门禁和可复现日志。

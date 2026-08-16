@@ -4,7 +4,7 @@
 
 - 输入：`[absolute .mlu path]`
 - 输出：`[absolute bangc_code_fix.mlu path]`
-- execution_backend：`local | worker | unresolved`
+- execution_backend：`local | worker | unavailable`
 - 设备：`[model / logical id / identifiers]`
 - `cncc`：`[absolute path and version]`
 - NeuWare/CNToolkit：`[version/root]`
@@ -64,5 +64,7 @@
 passed: true|false
 blocked: true|false
 target_verified: true|false
+compile_pass: true|false|unavailable
+accuracy_pass: true|false|unavailable
 final_code_path: [absolute path]
 ```

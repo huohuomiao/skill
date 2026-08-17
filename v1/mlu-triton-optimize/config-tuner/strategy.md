@@ -4,7 +4,7 @@ CUDA 的 shared memory、寄存器、occupancy、Grid、`num_warps` 和 `num_sta
 
 ## 职责概述
 
-自动化微调 Triton Kernel 配置。通过优先级策略在 **10次** 尝试内锁定最优 `BLOCK_SIZE`、`num_warps` 和 `num_stages`。
+自动化微调**当前 launch 架构内**的 Triton Kernel 配置。通过优先级策略在 **10次** 尝试内改进 `BLOCK_SIZE`、`num_warps` 和 `num_stages`；它不是普通/persistent/split-K 的架构搜索器。
 
 ## Step 1：提取与汇总轴信息
 
@@ -91,6 +91,16 @@ CUDA 的 shared memory、寄存器、occupancy、Grid、`num_warps` 和 `num_sta
 - 最大尝试次数为 10 次
 - 清理try最优配置过程中产生的临时文件
 
+### 架构逃逸门禁
+
+若当前代码是 persistent matmul，且真实编译/NCU 同时显示 spilling 或接近寄存器上限，并由 register limiter 导致约 1 active block/SM（或理论 occupancy 约不高于 25%），本策略最多用少量尝试确认较小 tile/stages 能否解除限制。仍未解除或性能更差时：
+
+1. 保留本轮输入，不把“10 次内无更优 config”写成优化空间已穷尽；
+2. 在报告设置 `architecture_reselect_required=true`、`force_non_persistent=true`，并列出 registers、spill、limiter 与 occupancy 证据；
+3. 建议下一策略为 `gen-autotune-config`，强制独立调优普通完整 Grid；K 足够大时再把 split-K 作为候选。
+
+`maxnreg` 只能作为实编译、实测候选；它可能把寄存器压力转成更多 spill，禁止把设置寄存器上限当作修复成功。
+
 ## Step 4：结果输出
 
-将性能最优 config 更新到 triton autotune 配置项中，并输出为最终代码。
+将当前架构内性能最优 config 更新到 Triton 配置并输出。若触发架构逃逸门禁且没有稳定提升，则逐字回退输入代码，同时在报告发出上述机器可读路由标记。

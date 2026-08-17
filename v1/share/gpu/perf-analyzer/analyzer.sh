@@ -67,6 +67,7 @@ ncu \
     --section LaunchStats \
     --section Occupancy \
     --section SpeedOfLight \
+    --section ComputeWorkloadAnalysis \
     --section MemoryWorkloadAnalysis \
     -o "$report_base" \
     "$python_executable" "$input_path" "$@"

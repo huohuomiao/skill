@@ -52,9 +52,9 @@ description: NVIDIA CUDA GPU（重点适配 RTX 3090 / sm_86）上的 Triton 算
 |--------|------|-------------|------|------------------|
 | 1 | 分块优化 | `retiling` | 分析 Triton kernel 代码，优化归约轴和并行轴的分块方案 | 否 |
 | 2 | 归约优化 | `reduce-opt` | 分析 Triton kernel 代码，对包含 reduce 类算子的 kernel 进行优化 | 否 |
-| 3 | Grid 优化 | `modify-grid` | 保留普通 CUDA launch 并按需展平；仅对实测有益的 persistent 候选按编译后 occupancy 限流 | 是 |
+| 3 | Grid 优化 | `modify-grid` | 保留/展平普通 CUDA launch，只记录 persistent 候选；不得在 config 搜索前锁定架构 | 是 |
 | 4 | 索引计算简化 | `index-computation-simplify` | 消除 load/store 地址计算中的冗余计算 | 否 |
-| 5 | 自动调优配置生成 | `gen-autotune-config` | 分析可调优的配置轴，生成带有单一最优配置项 autotune 的代码 | 是 |
+| 5 | 架构与配置联合调优 | `gen-autotune-config` | ordinary/persistent/split-K 各自调参并全局实测，最终冻结一个架构及一个配置 | 是 |
 
 #### 2.1 顺序执行各优化策略
 
@@ -126,7 +126,7 @@ agent = spawn_agent(
 
 ### 步骤 3：深度性能优化（Advanced Performance Optimization）
 
-深度性能优化：基于实测 perf 数据对开箱优化后的 Triton kernel 进行微调，通过不断迭代优化达到极致性能。
+深度性能优化：基于实测 perf 数据对开箱优化后的 Triton kernel 迭代优化；当 profiler 证明是 launch 架构级瓶颈时，允许重新选择架构而不只微调当前 config。
 
 深度性能优化专注于性能提升，要求每一步修改都必须有性能的提升。
 
@@ -136,6 +136,7 @@ agent = spawn_agent(
 |---------------|-----------------|------------------------------------------------------------|
 | Libdevice 优化 | `libdevice-opt` | 使用官方 `triton.language.extra.libdevice` 或标准 `tl` 原语替换低效计算模式 |
 | Config 微调    | `config-tuner`  | 通过调整 block size，num_stages，num_warps 等参数进行性能调优   |
+| 架构与配置联合搜索 | `gen-autotune-config` | 独立重调普通/persistent/split-K 家族，解除 persistent 寄存器/occupancy 锁定 |
 | 除法指令优化 | `div-to-mul` | 将除法指令修改为乘倒数 |
 
 #### 3.1 创建工作目录
@@ -179,6 +180,8 @@ agent = spawn_agent(
 
 当同时给出多个优化建议，只选中其中一个作为 `本轮优化策略`。（优先选择之前轮次中未被选中的优化策略）
 
+例外：报告出现 `architecture_reselect_required=true` 时必须优先选择 `gen-autotune-config`，即使 OOB 或更早轮次已执行过该策略；本轮输入状态和资源证据已经改变。`force_non_persistent=true` 表示普通完整 Grid 家族为必测项，`consider_split_k=true` 只表示满足精度/完整开销门禁后加入候选。不得改选 `libdevice-opt`、`div-to-mul` 或仅在原 persistent 家族内运行 `config-tuner` 来绕过该强路由。
+
 6. **重点要求**：分发给 subagent 执行 `本轮优化策略`（禁止主流程接管此任务）:
 
 先解析策略文档路径：
@@ -219,6 +222,7 @@ agent = spawn_agent(
 
    - 连续 3 次迭代优化性能无提升
    - 本轮性能分析报告中无任何优化建议
+   - 架构联合搜索已按当前 shape 完成且所有候选均无稳定提升，同时没有新的可验证瓶颈；保留 best-so-far 并停止重复搜索
 
 #### 3.3 汇总优化结果
 

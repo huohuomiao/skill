@@ -56,5 +56,5 @@ def run(a):
 1. 二维 Grid 在 CUDA 上有效，展平不是强制优化。
 2. 展平 Grid 仍为 `M * blocks_n`，不限制到 SM 数；每个原逻辑 program 恰好执行一次。
 3. 原实现若使用普通 store 且每个输出只由一个 program 负责，展平后必须继续保持独占写，不能擅自引入 atomic。
-4. 若要测试 persistent 候选，kernel 必须使用 `tl.num_programs(0)` 的 grid-stride loop，并保留同一 atomic 语义；Grid 上限由该已编译 config 的 registers/shared-memory occupancy 得到。
+4. 若值得测试 persistent，只在本轮记录候选；后续 `gen-autotune-config` 才生成 `tl.num_programs(0)` grid-stride loop并为该架构独立调参，Grid 上限由该 config 的 registers/shared-memory occupancy 得到。
 5. atomic 顺序可能造成浮点微小差异，沿用用户原精度阈值并与普通二维基线实测比较。无稳定性能提升则保留原二维 Grid。

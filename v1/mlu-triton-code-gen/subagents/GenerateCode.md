@@ -162,6 +162,8 @@ tl.store(out_ptr + out_index, result, mask=mask)
 grid = (triton.cdiv(N, BLOCK_N), triton.cdiv(M, BLOCK_M), ...)
 ```
 
+若 spec 标记为 matmul，优先生成覆盖全部输出 tile 的普通一维 Grid，并按 `GROUP_M` 分组解码；不得在 Code Gen 阶段生成 grid-stride persistent loop 或把 Grid 限制为 SM 数。FP16/BF16 `tl.dot` 保持 FP32 accumulator，并以资源保守的可编译配置作为基线；架构选择和大 tile 由 Optimize 阶段实测。
+
 #### 3.2 使用 wrapper.block_params 设置默认块大小
 
 ```python
@@ -200,6 +202,7 @@ kernel[grid](
 4. **偏移量 (offset) 和索引 (idx)**：必须使用 `step4_code_spec.kernel.aux_params` 中的定义
 5. **索引计算公式**：必须使用 `step4_code_spec.kernel.loads` 和 `step4_code_spec.kernel.stores` 中 `index_指针名` 的公式
 6. **归约执行位置**：对于归约类算子，必须优先按照 `reduce_loop` / `reduce_loop_passN` 在 Kernel 内部循环中执行归约轴遍历与累积
+7. **Matmul launch**：普通一维 grouped Grid 必须覆盖所有 M/N tile；不得把一维化误写成 persistent，也不得在生成阶段直接引入 split-K/atomic
 ### 禁止事项
 
 - **🚫 禁止**使用 step4_code_spec 中**不存在的**参数名

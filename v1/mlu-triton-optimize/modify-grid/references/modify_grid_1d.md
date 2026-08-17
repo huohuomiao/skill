@@ -48,7 +48,7 @@ def vector_scale_persistent(a_ptr, b_ptr, N, BLOCK_SIZE: tl.constexpr):
         tl.store(b_ptr + offsets, a * 2.0, mask=mask)
 ```
 
-先固定 config 并编译，从 `share/gpu` 的 NCU 分析结果取得 `active_blocks_per_sm`，然后动态读取 `sm_count`：
+以下 persistent 代码仅是交给后续 `gen-autotune-config` 的候选模板；当前 `modify-grid` 轮不得写入输出。后续为本家族独立选 config 并编译，从 `share/gpu` 的 NCU 分析结果取得 `active_blocks_per_sm`，然后动态读取 `sm_count`：
 
 ```python
 props = torch.cuda.get_device_properties(torch.cuda.current_device())

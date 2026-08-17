@@ -55,4 +55,4 @@ def run():
 - 检查维度顺序与原 Grid 完全一致；不能把 `(N,M,K)` 的恢复公式误写成 `(M,N,K)`。
 - 每个 `flat_pid ∈ [0,total_blocks)` 恰好映射到一个 `(pid_n,pid_m,pid_k)`。
 - 比较原多维 Grid 与展平 Grid 的精度和真实耗时。CUDA 不要求一维化；无收益则保留多维版本。
-- 只有明确的 persistent 候选才增加 `for flat_pid in range(pid,total_blocks,tl.num_programs(0))`，并按编译后 occupancy 限制 launch。
+- 只有明确的 persistent 候选才记录 `for flat_pid in range(pid,total_blocks,tl.num_programs(0))` 方案；由后续 `gen-autotune-config` 独立调参、按编译后 occupancy 限制 launch，当前轮不写入输出。

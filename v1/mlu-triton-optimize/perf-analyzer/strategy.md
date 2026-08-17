@@ -55,6 +55,7 @@ python .claude/skills/mlu-triton-main/subagents/scripts/submit_task_to_worker.py
 |---------------|-----------------|-------------------------------------------------------------|
 | Libdevice 优化 | `libdevice-opt` | 使用官方 CUDA libdevice 或标准 `tl` 原语替换低效计算模式 |
 | Config 微调    | `config-tuner`  | 通过调整 block size，num_stages，num_warps 等参数进行性能调优   |
+| 架构与配置联合搜索 | `gen-autotune-config` | 普通/persistent/split-K 各自调参后全局择优；用于架构级资源瓶颈 |
 | 除法指令优化 | `div-to-mul` | 将除法指令修改为乘倒数 |
 ## 性能分析步骤
 
@@ -97,17 +98,22 @@ rm {output_dir}/run_once.py
 
 解析时至少区分以下信息，缺失则在报告中标为“未采集”，不得补造数值：
 
-- 编译资源：registers/thread、shared memory/block、threads/block、spilling；
-- 并行度：theoretical occupancy、achieved occupancy、active warps/SM；
+- 编译资源：registers/thread、shared memory/block、threads/block、local spilling；
+- 并行度：theoretical occupancy、achieved occupancy、active warps/SM，以及 registers/shared memory/blocks 中实际 limiter；
 - 内存：DRAM/L2 吞吐、load/store 效率以及主要 stall 原因；
 - 计算：SM 吞吐、Tensor Core/FP32 利用情况和指令混合；
-- launch：实际 Grid、block/warp 配置与 kernel 总耗时。
+- launch：实际 Grid、block/warp 配置、架构家族（ordinary/persistent/split-K）与 kernel 总耗时。
 
-诊断顺序：先确认精度、输入规格和 kernel 对应关系，再判断瓶颈，最后给出一个可验证的策略建议。低 occupancy 不自动等于性能问题；若 DRAM 或计算单元已接近瓶颈，应避免仅为提高 occupancy 而缩小 tile。反之，register spilling 或 shared-memory 限制导致 active blocks/SM 下降时，优先建议 `config-tuner` 联合调整 BLOCK、warps 和 stages。
+诊断顺序：先确认精度、输入规格和 kernel 对应关系，再判断瓶颈，最后给出一个可验证的策略建议。低 occupancy 不自动等于性能问题；若 DRAM 或 Tensor Core 已接近相关硬件上限，应避免只为提高 occupancy 缩小 tile。Matmul 额外计算 `2*M*N*K/time`，峰值比例必须注明采用的**稠密** FP16/TF32 峰值来源，不能拿稀疏峰值或其它 GPU 数据代入。
+
+**架构级强路由**：若 persistent matmul 出现 local spill 或接近 255 registers/thread，并且 register limiter 只允许约 1 block/SM或理论 occupancy 约不高于 25%，同时吞吐仍明显未饱和，则首选 `gen-autotune-config`，报告写 `architecture_reselect_required=true`、`force_non_persistent=true`。必须先独立重调普通完整 Grid；K 足够大且并行不足时写 `consider_split_k=true`。此时不得先用 `config-tuner` 在原 persistent 家族内消耗所有深度优化轮次。
+
+未触发上述组合证据时，资源压力可先由 `config-tuner` 小范围联合调整 BLOCK/warps/stages。单独看到 occupancy 低、单独看到寄存器高，均不足以断言 persistent 必然更慢；最终仍由同一 RTX 3090 上的正确性和统一计时决定。
 
 **优化建议**：
 
   - 优化策略 `config-tuner`
+  - 优化策略 `gen-autotune-config`
   - 优化策略 `libdevice-opt`
   - 优化策略 `div-to-mul`
 

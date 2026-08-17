@@ -4,15 +4,15 @@
 
 ## 职责概述
 
-**为 Triton kernel 生成标准的 @triton.autotune 装饰器配置，且强制 autotune 中只有单一最优配置项。**
+**联合搜索 Triton kernel 的 launch 架构与 config；最终只输出全局胜出架构及其单一冻结配置。** 普通、persistent 与 split-K 不能共用一个先冻结的 config。
 
 ## 工作流程
 
 1. 进入 Step 1
-2. 根据 triton kernel 中的 autotune 配置情况，跳转 Step：
+2. 根据 Triton kernel 中的 autotune 配置情况和 launch 架构，跳转 Step：
   - triton kernel 无 autotune 配置 → Step 2
   - triton kernel 的 autotune 配置中包含 block size，但不包含 num_stages 或者 num_warps → 跳转至 Step 2.2
-  - triton kernel 的 autotune 配置完整 → 跳转至 Step 4
+  - triton kernel 的 autotune 配置完整 → 仍进入 Step 4；已有 best config 只属于当前架构，不能视为全局最优
 3. 顺序执行后续所有步骤
 
 ## 步骤
@@ -85,7 +85,17 @@
 
 #### 2.1 确定 blocksize
 
-先根据 kernel 内容生成保守的 tile 规模候选，但不使用静态张量大小冒充 CUDA 资源占用。对每个候选实际编译，记录 registers/thread、shared-memory/block、spilling 和理论 occupancy；这些编译结果才是资源裁剪依据。设备能力与采集接口统一从 `share/gpu` 读取。
+先根据 kernel 内容生成保守的 tile 规模候选，但不使用静态张量大小冒充 CUDA 资源占用。对每个“架构 + config”实际编译，记录 registers/thread、shared-memory/block、spilling、理论 occupancy 与 occupancy limiter；这些结果才是资源裁剪依据。设备能力与采集接口统一从 `share/gpu` 读取。
+
+先保存一个未 persistent 化的正确根版本，再建立互不污染的架构家族：
+
+| 家族 | 准入与搜索要求 |
+|---|---|
+| `ordinary` | 必选。启动全部逻辑 tile；matmul 优先比较 grouped 1D 与原正确 Grid，不按 SM 数封顶 |
+| `persistent` | 仅当 `modify-grid` 准入成立；使用本家族 config 的编译资源计算 resident Grid |
+| `split_k` | 仅限可拆 K 的 matmul，且 K 并行可能弥补不足；必须包含完整合并开销和独立精度门禁 |
+
+三个家族必须各自从同一正确语义根版本生成临时代码、各自调参。不得先把 ordinary 的 best config 冻结后套给 persistent，也不得让一次 `@triton.autotune` 在同一个 kernel 函数中切换不同控制流架构。
 
 生成 block size 组合，原则如下：
 **必须严格遵守的原则**
@@ -97,9 +107,10 @@
 
 **block size 选取规则参考**
 
-1. 从小到大生成 BLOCK 候选并逐项编译，剔除 shared-memory/寄存器超限、明显 spilling 或 occupancy 过低的组合；不要追求填满某个固定片上内存数值
+1. 从小到大生成 BLOCK 候选并逐项编译，剔除资源超限组合；spilling/低 occupancy 标记为高风险并减少基准预算，但不得仅凭 occupancy 删除一个实测最快候选
 2. 依据轴信息（`priority` 越小优先级越高），高优先级连续轴可尝试较大 block，低优先级轴保持较小以控制寄存器和 shared-memory 压力
-3. 限制 block size 组合总数在合理范围内（不超过 30 个），以避免过长的编译时间，其中优先级高的轴配置选项可以少一些，优先级低的轴配置项可以多一些
+3. 每个架构家族限制在不超过 30 个有依据的配置，避免无约束笛卡尔积；先编译裁剪，再对剩余候选计时
+4. sm_86 matmul 必须包含小 accumulator tile（如 `32x64`、`64x64`、`64x128`、`128x64`、`128x128` 的适用子集）以及 `BLOCK_K`、warps、stages 的联合变化。`128x256`/`256x128` 是寄存器高风险候选，只有编译与实测支持时保留，不能因它减少 persistent 循环次数就直接胜出
 
 #### 2.2 确定 num_warps 和 num_stages
 
@@ -115,10 +126,10 @@
 
 | 瓶颈 | 是否有persistent loop | 输入是否有升位宽/trans 操作 | `num_stages` 候选 | `num_warps` 候选 | 说明 |
 |:---:|:--------------:|:------------------------:|:----------------:|:----------------:|-----|
-| 计算 |      有        |           有             |   `[2,3,4]`      |     `[4,8]`      | 编译后按寄存器、shared memory、occupancy 裁剪 |
-| 计算 |      有        |           无             |   `[2,3,4]`      |     `[4,8]`      | `tl.dot` 流水候选必须实测 |
-| 计算 |      无        |           有             |   `[2,3,4]`      |     `[4,8]`      | 不因无 loop 禁用 CUDA 软件流水候选 |
-| 计算 |      无        |           无             |   `[2,3,4]`      |     `[4,8]`      | 以编译资源与耗时选优 |
+| 计算 |      有        |           有             |   `[1,2,3,4]`    |     `[4,8]`      | 高寄存器压力必须包含 stage 1/2 与小 tile |
+| 计算 |      有        |           无             |   `[1,2,3,4]`    |     `[4,8]`      | `tl.dot` 流水候选必须实测 |
+| 计算 |      无        |           有             |   `[1,2,3,4]`    |     `[4,8]`      | 不因无 loop 禁用 CUDA 软件流水候选 |
+| 计算 |      无        |           无             |   `[1,2,3,4]`    |     `[4,8]`      | 以编译资源与耗时选优 |
 | io  |      有        |           有             |   `[2,3]`        |     `[2,4,8]`    | 检查访存吞吐与 occupancy |
 | io  |      有        |           无             |   `[2,3]`        |     `[2,4,8]`    | persistent 仅作为实测候选 |
 | io  |      无        |           有             |   `[2,3]`        |     `[2,4,8]`    | 常规 CUDA launch，不限制到 SM 数 |
@@ -130,7 +141,7 @@ RTX 3090 不支持 FP8 Tensor Core 路径、TMA、thread-block cluster 或 Hoppe
 
 整合上述步骤获取的信息，输出 `@triton.autotune` 装饰器配置以及原始代码，生成原则如下：
 
-- configs 使用 for 循环推导式，block size, num_warps, num_stages 备选项组成列表被 for 循环依次遍历，每个备选项列表元素从小到大排序
+- 同一家族内可用显式列表或有条件的推导式生成 configs；不得生成无约束笛卡尔积，也不得把不同架构控制流塞进同一个装饰器
 - 包含 key 列表：使用 Step 1 中获取结果中的 `original_axis` 列表
 - 生成的 `@triton.autotune` 装饰器配置置于 kernel 定义之上，且紧挨着 kernel 定义
 - **若 kernel 中存在 in-place 操作，即对同一个输入指针既有 load 又有 store 操作，需要生成 restore_value 来保证每次编译时输入数据的一致性，不然精度一定会受到影响**。restore_value 为 @triton.autotune 的参数，值为列表，包含所有需要 restore 的输入指针的名字。
@@ -140,11 +151,10 @@ RTX 3090 不支持 FP8 Tensor Core 路径、TMA、thread-block cluster 或 Hoppe
   ```python
   @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_M': bm, 'BLOCK_N': bn}, num_stages=s, num_warps=w)
-        for bm in [32, 64, 128]
-        for bn in [64, 128, 256]
-        for s in [2, 3, 4]
-        for w in [2, 4, 8]
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=2, num_warps=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=2, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=3, num_warps=4),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=3, num_warps=8),
     ],
     key=['M', 'N'],
     restore_value=[...],
@@ -217,16 +227,35 @@ RTX 3090 不支持 FP8 Tensor Core 路径、TMA、thread-block cluster 或 Hoppe
 2. grid 参数 `num_blocks_m * num_blocks_n` 依赖 BLOCK_M、BLOCK_N，所以改为 lambda 动态计算；普通 CUDA kernel 保留全部逻辑 program，不按 SM 数封顶
 3. num_blocks_m、num_blocks_n 的传参依赖 BLOCK_M、BLOCK_N，删除后在 kernel 内以同一计算流恢复。只有明确生成 persistent 候选时才使用 `tl.num_programs(0)` 循环覆盖任务，并在候选编译后按寄存器/shared-memory occupancy 计算驻留 grid
 
-### Step 4: 生成单一最优配置
+### Step 4: 架构级调优并生成单一全局最优配置
 
-1. 开启环境变量 `TRITON_PRINT_AUTOTUNING` 并运行生成的代码
-2. 若精度有错误，请根据错误信息进行调试修改；若精度无误，提取 best_config 信息，并将 @triton.autotune 中的配置项组合缩减为单一最优配置
-3. 再次运行生成代码，若精度有错误，请根据错误信息进行调试修改；若精度无误，输出最终代码
-4. 若前序 `modify-grid` 只记录了 persistent 候选，则以此处冻结的 config 读取编译后 registers/shared memory/threads，按 `modify-grid/strategy.md` 重新计算 occupancy；仅在补齐 `tl.num_programs(0)` grid-stride coverage 且 RTX 3090 A/B 实测稳定更快时采用 persistent 版本，否则保留普通完整 Grid。
+#### 4.1 各家族独立选 config
+
+1. 开启 `TRITON_PRINT_AUTOTUNING`，分别运行 `ordinary`，以及满足准入条件的 `persistent`/`split_k` 临时候选。每个家族都从同一正确输入重新生成，不能串行继承另一家族的代码。
+2. 对每个 config 先做编译与精度检查，再记录资源和 CUDA Event 耗时。输入、warmup、repeat、同步与统计量必须一致；禁止用 NCU replay 时间选 winner。
+3. 每个家族只保留本家族 best config。persistent 必须用这个 config 的真实资源重新计算 `active_blocks_per_sm` 与 Grid；若 Grid 改变，重新验证和计时。
+4. 若某个 persistent matmul 出现接近 255 registers/thread、local-memory spilling、register limiter 只允许 1 block/SM 或理论 occupancy 不高于约 25%，必须强制完成小 tile ordinary 家族的独立重调；`config-tuner` 在原 persistent 架构内失败不算完成该门禁。
+
+#### 4.2 Split-K 候选
+
+仅当输入是 matmul、K 足够大且普通 Grid 并行/延迟隐藏不足，或 persistent 因串行遍历与资源压力受限时尝试 `SPLIT_K in {2,4,8}` 的适用子集。split-K 不是必然更快，也不天然降低 accumulator 寄存器；必须与较小 M/N tile 联合搜索。
+
+- 每个 `pid_k` 只遍历自己的 K 分片并正确 mask 尾部。
+- FP16/BF16 输入保持 FP32 累加。优先让各 split 写入互不重叠的 FP32 workspace，再用 finalize kernel 求和并转换输出；若用 FP32 atomic，必须在每次 autotune/benchmark 前清零，并处理原地/别名语义。
+- benchmark 必须包含清零、workspace 写回和 finalize 等原调用新增的全部 GPU 开销；同时报告额外 workspace 字节数。输出为 FP16/BF16 时，禁止直接用低精度 atomic 冒充 FP32 累加语义。
+- 含 atomic 或可变状态时配置 `reset_to_zero`、`restore_value` 或等价 pre-hook，保证每个 config 输入一致；无法证明精度与复现性则删除 split-K 候选。
+
+#### 4.3 全局选择与冻结
+
+1. 将各家族自己的 best config 在目标 RTX 3090 上重新做精度与统一性能测试，并比较完整 wrapper 路径。
+2. 只保留稳定更快的全局 winner；若 ordinary 获胜，必须彻底移除 persistent loop/SM 上限；若 persistent 获胜，仍需保留完整 grid-stride 覆盖证明。split-K 获胜则同时保留其 workspace/finalize 路径。
+3. 将 winner 的 `@triton.autotune` 缩减为一个配置，或等价冻结 launch meta；再次运行精度与性能测试后输出最终代码。其它家族只能留在报告，不留死代码。
+4. 报告逐家族记录 best config、registers/thread、spill、shared memory、active blocks/SM、occupancy、kernel/完整路径耗时、精度与回退理由；未采集项写 `N/A`，不得把其它 GPU 的结果推导为 3090 收益。
 
 ## 关键约束与边界条件
 
 | 约束项 | 规则 |
 |--------|------|
 | CUDA 资源 | 逐候选编译并读取 registers、shared memory、spilling、occupancy；硬件属性转读 `share/gpu` |
-| RTX 3090 特性 | 禁止 FP8、TMA、cluster、Hopper 专属路径；warps 常用 2/4/8，dot stages 实测 2/3/4 |
+| 架构公平性 | ordinary/persistent/split-K 各用自己的 best config，再比较完整路径；禁止架构先锁定 |
+| RTX 3090 特性 | 禁止 FP8、TMA、cluster、Hopper 专属路径；warps 常用 2/4/8，dot stages 在资源压力下包含 1/2 |

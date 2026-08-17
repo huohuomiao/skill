@@ -51,5 +51,5 @@ def run():
 1. `M`、`N` 可保留 constexpr 或改为运行时参数，取决于原调用契约和编译缓存需求；不要无理由强制一种形式。
 2. `grid` 启动全部 `cdiv(M*N, BLOCK_SIZE)` 个逻辑 program，不按 SM 数封顶。
 3. BLOCK_SIZE 与 `num_warps` 通过编译资源和实测选优；RTX 3090 常见 warps 候选为 2/4/8。
-4. 若普通 tiled 版本正确且 persistent 候选有合理收益，再按主策略 Step 3 编译候选、计算 occupancy，并用 `tl.num_programs(0)` 循环完整覆盖任务。
+4. 若普通 tiled 版本正确且 persistent 有合理收益，本轮只记录方案；后续 `gen-autotune-config` 为其独立调参、计算 occupancy，并用 `tl.num_programs(0)` 循环完整覆盖任务。
 5. RTX 3090 不得使用 FP8、TMA、thread-block cluster 或 Hopper 专属转置路径。

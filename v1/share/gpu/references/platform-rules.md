@@ -143,6 +143,17 @@ grid              = min(logical_tiles, sm_count * active_blocks_sm)
 4. shared memory 超过 48 KiB/block 时视为高风险候选；即便低于 99 KiB 硬上限，也可能只允许一 block/SM。必须真实 launch 并用 NCU 验证。
 5. 对 persistent kernel，用编译资源计算 resident programs；普通 kernel 不要据此裁剪逻辑 grid。
 
+### Ampere matmul 资源压力门禁
+
+以下是**组合诊断**而非单指标规则：persistent matmul 若接近 255 registers/thread 或出现 local-memory spilling，且 NCU 显示 register limiter 约为 1 active block/SM或理论 occupancy 约不高于 25%，同时 Tensor Core/SM/DRAM 吞吐仍未接近相关上限，则不得把当前 persistent config 直接定为全局最优。
+
+- 强制从未 persistent 化的正确版本重新搜索 ordinary 完整 Grid，matmul 优先比较 grouped 1D 调度；ordinary 与 persistent 必须各用自己的 best config。
+- FP32 accumulator 面积直接影响 live value 数。`128x256`/`256x128` 等 tile 是高风险而非绝对禁止项；必须同时比较 `32x64`、`64x64`、`64x128`、`128x64`、`128x128` 中适合 shape 的小 tile，以及较低 stages。
+- `maxnreg` 可能将寄存器占用变成 local-memory spill，只能作为实编译、实测候选，不能作为默认修复。
+- 低 occupancy 本身不等于慢；若大 tile 已使相关计算或带宽单元饱和，仍可保留。所有架构结论以目标 RTX 3090 的统一端到端测试为准。
+
+K 很大且 ordinary Grid 并行/延迟隐藏不足时，可加入 split-K，但它不是寄存器问题的自动解法。每个 split 必须覆盖互斥 K 范围并正确处理尾部；FP16/BF16 matmul 保持 FP32 累加，使用分离 FP32 workspace + finalize，或有严格清零门禁的 FP32 atomic。计时包含清零、workspace 和 finalize 开销，autotune 通过 `reset_to_zero`/`restore_value`/pre-hook 保证候选输入一致。split-K 必须与较小 M/N tile 联合搜索，并验证额外 workspace、精度和重复运行稳定性。
+
 ## 7. 精度与 dtype 门禁
 
 - FP32 `tl.dot` 在 NVIDIA Tensor Core 上默认可采用 TF32；需要严格 FP32 语义时显式 `input_precision="ieee"`，允许 TF32 时显式记录 `input_precision="tf32"`，并使用与需求一致的容差。`allow_tf32` 已弃用。
@@ -181,3 +192,7 @@ grid              = min(logical_tiles, sm_count * active_blocks_sm)
 - NVIDIA CC / Tensor Core / 资源表：<https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html>
 - RTX 3090 官方规格：<https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090/>
 - Nsight Compute CLI：<https://docs.nvidia.com/nsight-compute/NsightComputeCli/index.html>
+- Triton matmul grouped scheduling：<https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html>
+- Triton persistent matmul：<https://triton-lang.org/main/getting-started/tutorials/09-persistent-matmul.html>
+- Triton `Config`（stages / maxnreg）：<https://triton-lang.org/main/python-api/generated/triton.Config.html>
+- Nsight Compute profiling/occupancy/spill metrics：<https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html>

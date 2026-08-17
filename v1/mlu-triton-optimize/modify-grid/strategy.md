@@ -8,9 +8,11 @@ Grid 解析与展平属于通用 Triton 变换；CUDA 设备属性、资源上�
 
 1. 保留正确的普通 CUDA Grid；多维 Grid 在 CUDA 上合法，不需要仅为适配硬件而压成一维。
 2. 仅在索引更简单或实测更快时，把多维 Grid 等价展平为一维；展平后仍启动全部逻辑 program，不限制到 SM 数。
-3. 仅对明确的 persistent 候选生成 grid-stride loop。候选必须先编译，再根据 registers/thread、shared-memory/block、threads/block 和设备上限得到 active blocks/SM，最后计算驻留 Grid。
+3. 识别 persistent 候选并记录变换方案；候选必须在后续 `gen-autotune-config` 中按架构家族独立编译、调参和 A/B，不能在本策略提前锁定。
 
 严禁把普通 kernel 的 `grid` 强制限制为 SM 数。`sm_count // num_warps` 不是 CUDA occupancy 公式，也不得用作 Grid 上限。
+
+**流水线硬约束**：本策略位于 `gen-autotune-config` 之前，因此本轮输出只能是正确的普通 Grid（可做等价展平/分组），不得把 `triton_optimized.py` 改成 persistent loop。否则后续 autotune 只会在 persistent 家族内选 config，无法发现更高 occupancy 的普通 matmul。
 
 ## 步骤
 
@@ -60,7 +62,7 @@ Grid 解析与展平属于通用 Triton 变换；CUDA 设备属性、资源上�
 grid = (triton.cdiv(n_elements, BLOCK_SIZE),)
 ```
 
-不要添加 `min(..., sm_count)`。只有满足 Step 3 的 persistent 准入条件时，才另建候选而不直接覆盖基线。加载 `references/modify_grid_1d.md`。
+不要添加 `min(..., sm_count)`。满足 Step 3 时只记录 persistent 候选，不直接覆盖基线。加载 `references/modify_grid_1d.md`。
 
 #### 情况 C：普通多维 Grid
 
@@ -88,9 +90,9 @@ kernel 内用 `flat_pid` 恢复维度。展平只是索引映射，不等于 per
 grid = lambda meta: (triton.cdiv(M * N, meta["BLOCK_SIZE"]),)
 ```
 
-仅在普通 tiled 基线之后，且 Step 3 全部通过时再生成 persistent 版本。加载 `references/modify_grid_constexpr.md`。
+仅在普通 tiled 基线之后记录 persistent 方案，实际生成与选优延后到 `gen-autotune-config`。加载 `references/modify_grid_constexpr.md`。
 
-### Step 3：Persistent 候选准入与 Grid 计算
+### Step 3：Persistent 候选准入与记录
 
 #### 3.1 必须同时满足
 
@@ -98,8 +100,10 @@ grid = lambda meta: (triton.cdiv(M * N, meta["BLOCK_SIZE"]),)
 2. `logical_grid` 明显大于可同时驻留的 program 数，且减少调度/重复加载存在可解释收益。
 3. 每次循环迭代处理独立逻辑任务；不存在跨 program barrier、危险别名或未处理的输出竞争。
 4. 所有任务可由 `tl.num_programs(0)` 固定步长循环完整覆盖。
-5. 已编译目标候选并取得 registers/thread、shared-memory/block、threads/block 等真实资源数据。
-6. 最终通过相同输入、相同计时方法的 A/B 实测；无稳定提升则回退普通 Grid。
+5. 存在可解释的调度复用/尾波收益信号，值得交给后续架构搜索，而不是仅因 Grid 很大就 persistent 化。
+6. 后续能够取得 registers/thread、shared-memory/block、threads/block 等真实资源，并用相同输入、相同计时方法分别调优后 A/B。
+
+本轮只依据 1–6 记录候选。编译资源、occupancy、精度和性能是 `gen-autotune-config` **采用** persistent 前必须通过的延后门禁；任何一项缺失或无稳定提升都保留普通 Grid。
 
 规约写同一输出时，必须证明原有原子/分阶段合并语义仍正确。不得仅因展平或 persistent 化而擅自把普通 store 改成 atomic，也不得把所有输出都改成零初始化。
 
@@ -126,7 +130,7 @@ persistent_grid = min(logical_grid, resident_programs)
 
 `active_blocks_per_sm` 必须同时受 threads、registers、shared memory 和架构 block 上限约束，不能用 `num_warps` 单独推导。若无法取得编译后资源信息，跳过 persistent 候选。
 
-autotune 中不同 config 的资源占用可能不同。由于主流程里的 `gen-autotune-config` 在本策略之后执行，本轮不得生成需要冻结 config 的 persistent 改写；只记录候选。待第 5 个策略冻结最终 config 后，`gen-autotune-config` 必须按本节重新计算 occupancy、生成 persistent 候选并做 A/B；不得沿用早期 Grid 上限，也不得对所有 config 共用猜测值。
+autotune 中不同 config 的资源占用可能不同。本轮必须在报告中写出 `persistent_candidate=true/false`、逻辑任务映射和准入证据，但输出代码保持普通 Grid。`gen-autotune-config` 随后为普通与 persistent 家族分别找 best config，再按各自编译资源计算 persistent Grid 并 A/B；严禁拿普通家族冻结的同一 config 比较两个架构。
 
 RTX 3090 为 sm_86：禁止 FP8、TMA、thread-block cluster 和 Hopper 专属 persistent 路径。
 
@@ -190,7 +194,7 @@ a_i = flat_pid // (B * C)
 
 host 侧可用 `triton.cdiv`；kernel 内使用 `tl.cdiv` 或等价整数式 `(a + b - 1) // b`，不要调用 host-only API。
 
-#### 4.2 Persistent 候选
+#### 4.2 Persistent 候选方案（仅记录，当前不写入输出代码）
 
 wrapper 使用 Step 3 得到的编译后驻留 Grid：
 
@@ -226,14 +230,14 @@ for flat_pid in range(pid, total_blocks, num_programs):
 1. 编译与运行成功；目标设备确认为 CUDA，且 GPU capability 与 `share/gpu` 记录一致。
 2. 与原 PyTorch reference 和普通 Grid 基线比较精度，沿用用户给定阈值。
 3. 证明每个逻辑块恰好被覆盖，特别检查尾块、展平解码和规约写冲突。
-4. 用相同输入、warmup、repetition 和同步方式比较普通 Grid、展平候选、persistent 候选。
-5. 仅保留实测稳定更快的候选；性能持平、回退或资源指标恶化时恢复普通 Grid。
+4. 用相同输入、warmup、repetition 和同步方式比较原 Grid与普通展平/分组候选。
+5. 仅保留实测稳定更快的普通候选；persistent 方案交给 `gen-autotune-config` 独立调参后比较。
 
 测试至少覆盖三类规模：小规模（检查 launch 开销与空 Grid）、代表性规模（用于最终选优）和非整除规模（检查尾块）。若用户只提供一个固定规格，不得自行声称其它 shape 也有收益；报告要明确最终代码的适用 shape/key。
 
 对规约/atomic kernel 额外检查重复运行稳定性。浮点 atomic 的执行顺序可能变化，必须沿用用户阈值并记录最大误差；不得为了让候选通过而放宽容差。对 in-place 或别名输入，分别验证普通与 persistent 版本没有覆盖尚未读取的数据。
 
-报告至少包含：原 Grid、候选 Grid、是否展平、是否 persistent、logical task 数、资源采集来源、active blocks/SM、精度结果、普通/候选耗时和最终保留/回退理由。无法采集的字段写明“未取得”，不能填猜测值。
+报告至少包含：原 Grid、普通候选 Grid、是否展平/分组、`persistent_candidate`、logical task 数、精度结果、普通候选耗时和保留/回退理由。persistent 的资源与实测字段本轮写“延后至 gen-autotune-config”，不能填猜测值。
 
 ## 禁止项
 
@@ -242,6 +246,7 @@ for flat_pid in range(pid, total_blocks, num_programs):
 | 普通 kernel 使用 `min(logical_grid, sm_count)` | 会丢失任务，除非 kernel 已有正确 grid-stride loop |
 | 使用 `sm_count // num_warps` 计算 Grid | 不是 CUDA occupancy 模型 |
 | 未编译就猜 active blocks/SM | 忽略 registers/shared memory/threads 联合约束 |
+| 本策略直接输出 persistent loop | 会在 config 搜索前锁死调度架构 |
 | 无调用上下文时生成默认 wrapper | 无法证明 shape、Grid 和输出契约 |
 | 为了展平擅自引入 atomic | 可能改变确定性、精度和性能 |
 | 在 RTX 3090 上启用 FP8/TMA/cluster/Hopper 路径 | sm_86 不支持 |

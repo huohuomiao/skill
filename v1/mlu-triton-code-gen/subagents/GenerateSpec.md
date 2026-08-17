@@ -207,13 +207,10 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 
 ### Grid 规范
 
-⚠️ **Grid 个数必须与 Output 的拆分轴个数完全一致**
-- Grid 的维度数量 = Output 张量的拆分轴数量（从 `io_block_mapping` 中 output ptr 的 `block_name` 键值对个数确定）
-- 每个 grid 维度对应一个拆分轴，使用 `triton.cdiv(轴大小, BLOCK_轴)` 计算
-- **写法是固定的**：`(triton.cdiv(轴大小1, BLOCK_轴1), triton.cdiv(轴大小2, BLOCK_轴2), ...)`
-
-⚠️ **Grid 顺序必须与 pid 获取顺序一致**
-- Grid 第 0 维对应 `tl.program_id(0)`，第 1 维对应 `tl.program_id(1)`
+- 通用算子的 Grid 默认逐一对应 Output 拆分轴：`(triton.cdiv(size0, BLOCK_0), ...)`，Grid 顺序必须与 `tl.program_id(axis)` 的解码顺序一致。
+- **Matmul 例外**：`tl.dot` 的 M/N 输出 tile 优先写成覆盖全部 `cdiv(M, BLOCK_M) * cdiv(N, BLOCK_N)` 任务的普通一维 Grid，并在 kernel 内双射解码 `pid_m/pid_n`；推荐按 `GROUP_M` 分组 M 轴以改善 L2 局部性。这里的一维化不等于 persistent，禁止把 Grid 截到 SM 数。
+- 只有能证明线性 PID 与所有输出 tile 一一对应时才允许展平；否则保留多维 Grid。K 仍在单个 program 内循环，split-K 只由 Optimize 阶段在独立精度/性能门禁下生成。
+- RTX 3090 FP16/BF16 matmul 的生成阶段使用资源保守的普通 Grid 基线（例如 `64x128x32` 或 `128x64x32`、`num_warps=4`、`num_stages=2/3` 中一个可编译配置）；这只是基线，不得声称最优。`128x256` 等大 FP32 accumulator tile 必须留给编译资源驱动的 autotune。
 
 ### Block 参数规范
 
@@ -238,7 +235,7 @@ GenerateSpec 是 mlu-triton-code-gen 工作流程的第 4 步 subagent。负责�
 | kernel 规范完整 | 检查 kernel 字段 | 包含 block_params, aux_params, loads, stores |
 | loads/stores 结构正确 | 检查 loads/stores 字段 | 每个指针包含 index_指针名 和 mask_指针名 字段 |
 | wrapper 规范完整 | 检查 wrapper 字段 | 包含 grid, block_params |
-| Grid 维度正确 | 检查 grid 公式 | Grid 维度数量 = 输出张量的拆分轴数量 |
+| Grid 覆盖正确 | 检查 grid 与 PID 解码 | 通用 Grid 对应拆分轴；matmul 展平 Grid 与全部 M/N tile 双射且未按 SM 截断 |
 
 ## 回退机制
 

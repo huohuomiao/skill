@@ -25,6 +25,17 @@ ALIASES = {
         "sm__maximum_warps_per_active_cycle_pct",
         "sm__maximum_warps_avg_per_active_cycle.pct_of_peak_sustained_active",
     ),
+    "spill_requests": ("derived__local_spilling_requests",),
+    "spill_percent": ("derived__local_spilling_requests_pct",),
+    "limit_registers": ("launch__occupancy_limit_registers",),
+    "limit_shared": ("launch__occupancy_limit_shared_mem",),
+    "limit_blocks": ("launch__occupancy_limit_blocks",),
+    "limit_warps": ("launch__occupancy_limit_warps",),
+    "tensor": (
+        "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+        "smsp__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active",
+        "sm__pipe_tensor_op_hmma_cycles_active.avg.pct_of_peak_sustained_active",
+    ),
     "sm": ("sm__throughput.avg.pct_of_peak_sustained_elapsed",),
     "combined": ("gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed",),
     "dram": (
@@ -110,15 +121,50 @@ def analyze(key, rows):
         shared = (static or 0) + (dynamic or 0)
     achieved, theoretical = values["achieved"][0], values["theoretical"][0]
     sm, dram, waves = values["sm"][0], values["dram"][0], values["waves"][0]
+    spill_requests, spill_percent = values["spill_requests"][0], values["spill_percent"][0]
+    limits = {
+        "registers": values["limit_registers"][0],
+        "shared_memory": values["limit_shared"][0],
+        "blocks": values["limit_blocks"][0],
+        "warps": values["limit_warps"][0],
+    }
+    finite_limits = {name: value for name, value in limits.items() if value is not None}
+    active_blocks_limit = min(finite_limits.values()) if finite_limits else None
+    occupancy_limiters = sorted(
+        name for name, value in finite_limits.items() if value == active_blocks_limit
+    )
     advice = []
 
-    def add(level, evidence, action):
-        advice.append({"level": level, "evidence": evidence, "action": action})
+    def add(level, evidence, action, strategy=None, flags=None):
+        item = {"level": level, "evidence": evidence, "action": action}
+        if strategy:
+            item["strategy"] = strategy
+        if flags:
+            item["flags"] = flags
+        advice.append(item)
 
-    if registers is not None and registers >= 200:
-        add("high", f"{registers:.0f} registers/thread is near the sm_86 limit 255", "reduce live ranges, tile, unrolling or stages; check spills")
+    has_spill = ((spill_requests is not None and spill_requests > 0) or
+                 (spill_percent is not None and spill_percent > 0))
+    register_limited_one = limits["registers"] is not None and limits["registers"] <= 1
+    low_residency = register_limited_one or (theoretical is not None and theoretical <= 25)
+    severe_register_pressure = (has_spill or (registers is not None and registers >= 240)) and low_residency
+    if severe_register_pressure:
+        evidence = "register pressure and low residency"
+        if registers is not None:
+            evidence += f": {registers:.0f} registers/thread"
+        if spill_requests is not None:
+            evidence += f", {spill_requests:.0f} local spill requests"
+        if theoretical is not None:
+            evidence += f", {theoretical:.1f}% theoretical occupancy"
+        add("high", evidence,
+            "independently retune a full-grid non-persistent family; if this is matmul, evaluate guarded split-K after smaller accumulator tiles",
+            "gen-autotune-config", {"architecture_reselect_candidate": True})
+    elif registers is not None and registers >= 200:
+        add("high", f"{registers:.0f} registers/thread is near the sm_86 limit 255", "reduce live ranges, accumulator tile, unrolling or stages; compare full-grid scheduling", "config-tuner")
     elif registers is not None and registers >= 128:
-        add("medium", f"{registers:.0f} registers/thread may restrict residency", "compare smaller tile/stages and inspect spills")
+        add("medium", f"{registers:.0f} registers/thread may restrict residency", "compare smaller tile/stages and inspect spills", "config-tuner")
+    if has_spill and not severe_register_pressure:
+        add("high", "NCU reports local-memory register spilling", "reduce live ranges/tile/stages and benchmark; local memory is device memory", "config-tuner")
     if shared is not None and shared > 99 * 1024:
         add("high", f"{shared / 1024:.1f} KiB shared/block exceeds sm_86 limit 99 KiB", "reduce tile or stages")
     elif shared is not None and shared > 48 * 1024:
@@ -154,6 +200,12 @@ def analyze(key, rows):
             "block_threads": values["block"][0], "grid_blocks": values["grid"][0],
             "waves_per_sm": waves, "achieved_occupancy_percent": achieved,
             "theoretical_occupancy_percent": theoretical,
+            "local_spill_requests": spill_requests,
+            "local_spill_requests_percent": spill_percent,
+            "occupancy_limits_blocks_per_sm": limits,
+            "occupancy_limiter": occupancy_limiters,
+            "active_blocks_per_sm_limit": active_blocks_limit,
+            "tensor_core_active_percent": values["tensor"][0],
             "sm_throughput_percent": sm, "combined_throughput_percent": values["combined"][0],
             "dram_throughput_percent": dram,
             "dram_read_bytes": convert(*values["read"], "bytes"),
@@ -175,14 +227,19 @@ def show(kernels, source):
         print(f"\n[{index}] {kernel['kernel_name']} (launch ID {kernel['launch']['id']})")
         print("  occupancy: achieved={} theoretical={} waves/SM={}".format(
             fmt(m["achieved_occupancy_percent"], "%"), fmt(m["theoretical_occupancy_percent"], "%"), fmt(m["waves_per_sm"], digits=2)))
-        print("  resources: registers/thread={} shared/block={} block={} grid={}".format(
-            fmt(m["registers_per_thread"], digits=0), "n/a" if shared is None else f"{shared/1024:.1f} KiB",
+        print("  resources: registers/thread={} spills={} ({}) shared/block={} block={} grid={}".format(
+            fmt(m["registers_per_thread"], digits=0), fmt(m["local_spill_requests"], digits=0),
+            fmt(m["local_spill_requests_percent"], "%"), "n/a" if shared is None else f"{shared/1024:.1f} KiB",
             fmt(m["block_threads"], digits=0), fmt(m["grid_blocks"], digits=0)))
-        print("  throughput: SM={} DRAM={} combined={} duration={}".format(
+        print("  residency: limiter={} active-block-limit={}".format(
+            ",".join(m["occupancy_limiter"]) or "n/a", fmt(m["active_blocks_per_sm_limit"], digits=0)))
+        print("  throughput: SM={} DRAM={} tensor={} combined={} duration={}".format(
             fmt(m["sm_throughput_percent"], "%"), fmt(m["dram_throughput_percent"], "%"),
-            fmt(m["combined_throughput_percent"], "%"), "n/a" if duration is None else f"{duration/1000:.2f} us"))
+            fmt(m["tensor_core_active_percent"], "%"), fmt(m["combined_throughput_percent"], "%"),
+            "n/a" if duration is None else f"{duration/1000:.2f} us"))
         for item in kernel["suggestions"]:
-            print(f"  - [{item['level']}] {item['evidence']}; {item['action']}")
+            route = f"; strategy={item['strategy']}" if item.get("strategy") else ""
+            print(f"  - [{item['level']}] {item['evidence']}; {item['action']}{route}")
     print("\nSuggestions are triage hints, not proof; inspect the .ncu-rep and benchmark.")
 
 

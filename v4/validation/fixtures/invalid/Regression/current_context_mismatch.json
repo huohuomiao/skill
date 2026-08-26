@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "current-other-context-2026-08-25",
+  "hardware_key": "MLU590-M9:cluster-24:memory-64GB",
+  "toolchain_key": "neuware-1.19:triton-3.1:torch-2.5",
+  "cases": [
+    {
+      "case_id": "reduce_sum_fp32_4096",
+      "status": "completed",
+      "accuracy": {"pass": true, "atol": 0.0001, "rtol": 0.0001, "max_diff": 0.00001},
+      "performance": {"latency_ms": 0.7},
+      "resources": {"wall_time_sec": 500.0, "token_count": 9000, "subagent_calls": 4, "worker_calls": 3}
+    },
+    {
+      "case_id": "elementwise_exp_fp32_1048576",
+      "status": "completed",
+      "accuracy": {"pass": true, "atol": 0.0001, "rtol": 0.0001, "max_diff": 0.00001},
+      "performance": {"latency_ms": 0.3},
+      "resources": {"wall_time_sec": 400.0, "token_count": 7000, "subagent_calls": 3, "worker_calls": 2}
+    }
+  ]
+}

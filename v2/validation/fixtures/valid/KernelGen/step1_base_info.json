@@ -1,0 +1,25 @@
+{
+  "step": 1,
+  "op_name": "reduce_sum",
+  "compute_type": "reduction",
+  "compute_formula": "Y[n,k] = sum_m X[n,m,k]",
+  "compute_note": {
+    "description": "对输入 X 沿 M 轴求和。",
+    "torch_impl": "Y = X.sum(dim=1)"
+  },
+  "io_shapes": {
+    "X": {
+      "type": "input",
+      "axis": ["N", "M", "K"],
+      "shape": [16, 32, 128],
+      "contiguity": [true, false, true]
+    },
+    "Y": {
+      "type": "output",
+      "axis": ["N", "K"],
+      "shape": [16, 128],
+      "contiguity": [true, true]
+    }
+  },
+  "reduce_axes": ["M"]
+}

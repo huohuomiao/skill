@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "require_same_context": true,
+  "require_accuracy_pass": true,
+  "require_performance_metric": true,
+  "require_resource_metrics": true,
+  "max_latency_regression_pct": 5.0,
+  "max_wall_time_regression_pct": 20.0,
+  "max_token_regression_pct": 20.0,
+  "max_subagent_call_increase": 1,
+  "max_worker_call_increase": 1
+}

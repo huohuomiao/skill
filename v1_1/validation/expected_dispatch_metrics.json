@@ -1,0 +1,26 @@
+{
+  "normal/direct-pass": {
+    "baseline_dispatches": 8,
+    "optimized_dispatches": 4,
+    "minimum_dispatch_reduction_pct": 50.0,
+    "minimum_static_context_reduction_pct": 50.0
+  },
+  "normal/repair": {
+    "baseline_dispatches": 10,
+    "optimized_dispatches": 5,
+    "minimum_dispatch_reduction_pct": 50.0,
+    "minimum_static_context_reduction_pct": 50.0
+  },
+  "triton-fast/direct-pass": {
+    "baseline_dispatches": 3,
+    "optimized_dispatches": 3,
+    "minimum_dispatch_reduction_pct": 0.0,
+    "minimum_static_context_reduction_pct": 0.0
+  },
+  "triton-fast/repair": {
+    "baseline_dispatches": 5,
+    "optimized_dispatches": 4,
+    "minimum_dispatch_reduction_pct": 20.0,
+    "minimum_static_context_reduction_pct": 0.0
+  }
+}

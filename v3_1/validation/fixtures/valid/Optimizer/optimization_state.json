@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "mode": "balanced",
+  "plan_path": "/tmp/optimization_plan.json",
+  "started_at": "2026-08-25T00:00:00+00:00",
+  "started_at_epoch": 1787616000.0,
+  "limits": {
+    "max_wall_time_sec": 1800,
+    "max_subagent_calls": 8,
+    "max_worker_calls": 8,
+    "max_strategy_attempts": 8,
+    "max_advanced_iterations": 0,
+    "advanced_patience": 0,
+    "min_improvement_pct": 2.0
+  },
+  "usage": {
+    "subagent_calls": 2,
+    "worker_calls": 1,
+    "strategy_attempts": 2,
+    "advanced_iterations": 0
+  },
+  "advanced_no_improvement": 0,
+  "best": {
+    "performance_ms": 0.12,
+    "artifact_path": "/tmp/reduce-opt/triton_optimized.py",
+    "strategy": "reduce-opt"
+  },
+  "stop_reason": null,
+  "history": []
+}

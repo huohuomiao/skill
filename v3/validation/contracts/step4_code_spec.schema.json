@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "step4_code_spec.schema.json",
+  "title": "KernelGen Step 4 code specification",
+  "type": "object",
+  "required": ["compute_formula", "compute_note", "fusion_note", "kernel", "wrapper"],
+  "properties": {
+    "compute_formula": {"type": "string", "minLength": 1},
+    "compute_note": {
+      "type": "object",
+      "required": ["description", "torch_impl"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "torch_impl": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "fusion_note": {"type": "string", "minLength": 1},
+    "kernel": {
+      "type": "object",
+      "required": ["block_params", "aux_params", "loads", "stores", "compute"],
+      "properties": {
+        "block_params": {"type": "object"},
+        "aux_params": {"type": "object"},
+        "loads": {"type": "object"},
+        "stores": {"type": "object"},
+        "compute": {
+          "type": "object",
+          "required": ["formula", "note"],
+          "properties": {
+            "formula": {"type": "string", "minLength": 1},
+            "note": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "wrapper": {
+      "type": "object",
+      "required": ["grid", "block_params"],
+      "properties": {
+        "grid": {"type": "string", "minLength": 1},
+        "block_params": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

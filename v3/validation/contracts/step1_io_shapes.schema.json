@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "step1_io_shapes.schema.json",
+  "title": "KernelGen Step 1 IO shapes",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": ["type", "axis", "shape", "contiguity"],
+    "properties": {
+      "type": {"type": "string", "enum": ["input", "output"]},
+      "axis": {"type": "array", "items": {"type": "string"}},
+      "shape": {"type": "array", "items": {"type": ["integer", "string"]}},
+      "contiguity": {"type": "array", "items": {"type": "boolean"}}
+    },
+    "additionalProperties": true
+  }
+}

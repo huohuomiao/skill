@@ -1,0 +1,10 @@
+{
+  "step": 1,
+  "compute_type": "reduction",
+  "compute_formula": "Y = sum(X)",
+  "compute_note": {
+    "description": "缺少 op_name 和 reduce_axes，用于验证负向样例。",
+    "torch_impl": "Y = X.sum()"
+  },
+  "io_shapes": {}
+}

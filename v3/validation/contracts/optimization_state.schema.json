@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "optimization_state.schema.json",
+  "title": "Global optimization budget state",
+  "type": "object",
+  "required": ["version", "mode", "plan_path", "started_at", "started_at_epoch", "limits", "usage", "advanced_no_improvement", "best", "stop_reason", "history"],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "mode": {"type": "string", "enum": ["correctness", "balanced", "max-performance"]},
+    "plan_path": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "started_at_epoch": {"type": "number"},
+    "limits": {
+      "type": "object",
+      "required": ["max_wall_time_sec", "max_subagent_calls", "max_worker_calls", "max_strategy_attempts", "max_advanced_iterations", "advanced_patience", "min_improvement_pct"],
+      "properties": {
+        "max_wall_time_sec": {"type": "integer"},
+        "max_subagent_calls": {"type": "integer"},
+        "max_worker_calls": {"type": "integer"},
+        "max_strategy_attempts": {"type": "integer"},
+        "max_advanced_iterations": {"type": "integer"},
+        "advanced_patience": {"type": "integer"},
+        "min_improvement_pct": {"type": "number"}
+      },
+      "additionalProperties": true
+    },
+    "usage": {
+      "type": "object",
+      "required": ["subagent_calls", "worker_calls", "strategy_attempts", "advanced_iterations"],
+      "properties": {
+        "subagent_calls": {"type": "integer"},
+        "worker_calls": {"type": "integer"},
+        "strategy_attempts": {"type": "integer"},
+        "advanced_iterations": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "advanced_no_improvement": {"type": "integer"},
+    "best": {
+      "type": "object",
+      "required": ["performance_ms", "artifact_path", "strategy"],
+      "properties": {
+        "performance_ms": {"type": ["number", "null"]},
+        "artifact_path": {"type": ["string", "null"]},
+        "strategy": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "stop_reason": {"type": ["string", "null"]},
+    "history": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

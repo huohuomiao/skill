@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "step1_base_info.schema.json",
+  "title": "KernelGen Step 1 base information",
+  "type": "object",
+  "required": [
+    "step",
+    "op_name",
+    "compute_type",
+    "compute_formula",
+    "compute_note",
+    "io_shapes",
+    "reduce_axes"
+  ],
+  "properties": {
+    "step": {"type": "integer", "const": 1},
+    "op_name": {"type": "string", "minLength": 1},
+    "compute_type": {
+      "type": "string",
+      "enum": ["reduction", "elementwise", "matmul", "normalization", "others"]
+    },
+    "compute_formula": {"type": "string", "minLength": 1},
+    "compute_note": {
+      "type": "object",
+      "required": ["description", "torch_impl"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "torch_impl": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "io_shapes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "axis", "shape", "contiguity"],
+        "properties": {
+          "type": {"type": "string", "enum": ["input", "output"]},
+          "axis": {"type": "array", "items": {"type": "string"}},
+          "shape": {"type": "array", "items": {"type": ["integer", "string"]}},
+          "contiguity": {"type": "array", "items": {"type": "boolean"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "reduce_axes": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

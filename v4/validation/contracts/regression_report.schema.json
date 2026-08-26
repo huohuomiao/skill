@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "regression_report.schema.json",
+  "title": "MLU Triton regression comparison report",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "baseline_run_id", "current_run_id", "context_compatible", "passed", "global_violations", "summary", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "generated_at": {"type": "string"},
+    "baseline_run_id": {"type": "string"},
+    "current_run_id": {"type": "string"},
+    "context_compatible": {"type": "boolean"},
+    "passed": {"type": "boolean"},
+    "global_violations": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "object"},
+    "cases": {"type": "array", "minItems": 1, "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}

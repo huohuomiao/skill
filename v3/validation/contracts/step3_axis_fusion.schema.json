@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "step3_axis_fusion.schema.json",
+  "title": "KernelGen Step 3 axis fusion",
+  "type": "object",
+  "required": ["compute_formula", "compute_note", "fusion_note", "io_block_mapping"],
+  "properties": {
+    "compute_formula": {"type": "string", "minLength": 1},
+    "compute_note": {
+      "type": "object",
+      "required": ["description", "torch_impl"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "torch_impl": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "fusion_note": {"type": "string", "minLength": 1},
+    "io_block_mapping": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["block_name", "axis_size", "contiguity"],
+        "properties": {
+          "block_name": {
+            "type": "object",
+            "additionalProperties": {"type": "string", "minLength": 1}
+          },
+          "axis_size": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": ["integer", "string"]}
+            }
+          },
+          "reduce_dim": {
+            "type": "object",
+            "additionalProperties": {"type": "string", "minLength": 1}
+          },
+          "reduce_size": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": ["integer", "string"]}
+            }
+          },
+          "contiguity": {"type": "array", "items": {"type": "boolean"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

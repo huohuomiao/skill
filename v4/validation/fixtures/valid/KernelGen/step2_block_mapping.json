@@ -1,0 +1,21 @@
+{
+  "compute_formula": "Y[n,k] = sum_m X[n,m,k]",
+  "compute_note": {
+    "description": "对输入 X 沿 M 轴求和。",
+    "torch_impl": "Y = X.sum(dim=1)"
+  },
+  "io_block_mapping": {
+    "X_ptr": {
+      "block_name": {"N": "BLOCK_N", "K": "BLOCK_K"},
+      "axis_size": {"N": [16], "K": [128]},
+      "reduce_dim": {"M": "BLOCK_M"},
+      "reduce_size": {"M": [32]},
+      "contiguity": [true, false, true]
+    },
+    "Y_ptr": {
+      "block_name": {"N": "BLOCK_N", "K": "BLOCK_K"},
+      "axis_size": {"N": [16], "K": [128]},
+      "contiguity": [true, true]
+    }
+  }
+}

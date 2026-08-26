@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "baseline-2026-08-25",
+  "hardware_key": "MLU370-X8:cluster-16:memory-48GB",
+  "toolchain_key": "neuware-1.18:triton-3.0:torch-2.4",
+  "cases": [
+    {
+      "case_id": "reduce_sum_fp32_4096",
+      "status": "completed",
+      "accuracy": {"pass": true, "atol": 0.0001, "rtol": 0.0001, "max_diff": 0.00001},
+      "performance": {"latency_ms": 1.0},
+      "resources": {"wall_time_sec": 600.0, "token_count": 10000, "subagent_calls": 4, "worker_calls": 3}
+    },
+    {
+      "case_id": "elementwise_exp_fp32_1048576",
+      "status": "completed",
+      "accuracy": {"pass": true, "atol": 0.0001, "rtol": 0.0001, "max_diff": 0.00001},
+      "performance": {"latency_ms": 0.5},
+      "resources": {"wall_time_sec": 480.0, "token_count": 8000, "subagent_calls": 3, "worker_calls": 2}
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+#include <bang.h>
+#include <cnrt.h>
+
+#include <cmath>
+#include <cstdio>
+#include <vector>
+
+#define BANGC_SMOKE_ELEMENTS 256
+
+#define BANGC_CNRT_CHECK(call)                                                \
+  do {                                                                        \
+    cnrtRet_t bangc_cnrt_status = (call);                                     \
+    if (bangc_cnrt_status != 0) {                                             \
+      std::fprintf(stderr, "CNRT call failed at %s:%d, status=%d\n",          \
+                   __FILE__, __LINE__, static_cast<int>(bangc_cnrt_status));  \
+      return 1;                                                               \
+    }                                                                         \
+  } while (0)
+
+__mlu_global__ void bangc_vector_add_kernel(float *x, float *y, float *output,
+                                             int element_count) {
+  __nram__ float x_nram[BANGC_SMOKE_ELEMENTS];
+  __nram__ float y_nram[BANGC_SMOKE_ELEMENTS];
+  __nram__ float output_nram[BANGC_SMOKE_ELEMENTS];
+
+  const int offset = taskId * BANGC_SMOKE_ELEMENTS;
+  if (offset >= element_count) {
+    return;
+  }
+
+  int count = element_count - offset;
+  if (count > BANGC_SMOKE_ELEMENTS) {
+    count = BANGC_SMOKE_ELEMENTS;
+  }
+  const int bytes = count * static_cast<int>(sizeof(float));
+
+  __memcpy(x_nram, x + offset, bytes, GDRAM2NRAM);
+  __memcpy(y_nram, y + offset, bytes, GDRAM2NRAM);
+  __bang_add(output_nram, x_nram, y_nram, count);
+  __memcpy(output + offset, output_nram, bytes, NRAM2GDRAM);
+}
+
+int main() {
+  constexpr int element_count = BANGC_SMOKE_ELEMENTS;
+  const size_t bytes = static_cast<size_t>(element_count) * sizeof(float);
+
+  std::vector<float> host_x(element_count);
+  std::vector<float> host_y(element_count);
+  std::vector<float> host_output(element_count, 0.0f);
+  for (int index = 0; index < element_count; ++index) {
+    host_x[index] = static_cast<float>(index) * 0.25f - 7.0f;
+    host_y[index] = static_cast<float>(index % 17) * -0.5f + 3.0f;
+  }
+
+  BANGC_CNRT_CHECK(cnrtSetDevice(0));
+
+  cnrtQueue_t queue = nullptr;
+  BANGC_CNRT_CHECK(cnrtQueueCreate(&queue));
+
+  float *device_x = nullptr;
+  float *device_y = nullptr;
+  float *device_output = nullptr;
+  BANGC_CNRT_CHECK(cnrtMalloc(reinterpret_cast<void **>(&device_x), bytes));
+  BANGC_CNRT_CHECK(cnrtMalloc(reinterpret_cast<void **>(&device_y), bytes));
+  BANGC_CNRT_CHECK(cnrtMalloc(reinterpret_cast<void **>(&device_output), bytes));
+
+  BANGC_CNRT_CHECK(
+      cnrtMemcpy(device_x, host_x.data(), bytes, cnrtMemcpyHostToDev));
+  BANGC_CNRT_CHECK(
+      cnrtMemcpy(device_y, host_y.data(), bytes, cnrtMemcpyHostToDev));
+
+  cnrtDim3_t launch_dim = {1, 1, 1};
+  cnrtFunctionType_t function_type = cnrtFuncTypeBlock;
+  bangc_vector_add_kernel<<<launch_dim, function_type, queue>>>(
+      device_x, device_y, device_output, element_count);
+  BANGC_CNRT_CHECK(cnrtQueueSync(queue));
+  BANGC_CNRT_CHECK(cnrtMemcpy(host_output.data(), device_output, bytes,
+                              cnrtMemcpyDevToHost));
+
+  float max_diff = 0.0f;
+  for (int index = 0; index < element_count; ++index) {
+    const float expected = host_x[index] + host_y[index];
+    const float diff = std::fabs(host_output[index] - expected);
+    if (diff > max_diff) {
+      max_diff = diff;
+    }
+  }
+
+  BANGC_CNRT_CHECK(cnrtFree(device_x));
+  BANGC_CNRT_CHECK(cnrtFree(device_y));
+  BANGC_CNRT_CHECK(cnrtFree(device_output));
+  BANGC_CNRT_CHECK(cnrtQueueDestroy(queue));
+
+  std::printf("BANGC_VECTOR_ADD_MAX_DIFF=%.9g\n", max_diff);
+  if (max_diff > 1.0e-5f) {
+    std::fprintf(stderr, "BANGC_VECTOR_ADD_FAIL\n");
+    return 1;
+  }
+  std::printf("BANGC_VECTOR_ADD_PASS\n");
+  return 0;
+}

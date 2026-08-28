@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "integration-suite.schema.json",
+  "title": "Hardware integration regression suite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite_id", "kind", "hardware_model", "timeout_seconds", "cases", "worker_checks"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "suite_id": {"type": "string", "minLength": 1},
+    "kind": {"const": "hardware"},
+    "hardware_model": {"type": "string", "minLength": 1},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "operator_class", "workdir", "commands"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "operator_class": {"enum": ["elementwise", "reduction", "layout"]},
+          "workdir": {"type": "string", "minLength": 1},
+          "commands": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["compile", "accuracy", "performance"],
+            "properties": {
+              "compile": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+              "accuracy": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+              "performance": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        }
+      }
+    },
+    "worker_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["submission", "failure_recovery"],
+      "properties": {
+        "submission": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "failure_recovery": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

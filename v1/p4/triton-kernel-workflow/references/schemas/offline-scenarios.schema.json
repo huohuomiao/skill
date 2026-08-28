@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "offline-scenarios.schema.json",
+  "title": "Offline behavior evaluation scenarios",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenarios"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "input", "expected"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "category": {
+            "enum": ["routing", "stage-gate", "file-access", "schema", "rollback", "evidence", "dispatch", "generation-policy", "optimization-mode", "resume-policy"]
+          },
+          "input": {"type": "object"},
+          "expected": {"type": "object"}
+        }
+      }
+    }
+  }
+}

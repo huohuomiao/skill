@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tuning-state.schema.json",
+  "title": "Global tuning budget state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "optimization_mode", "status", "started_at", "updated_at", "limits", "usage", "stop_reason", "events"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "optimization_mode": {"enum": ["balanced", "max-performance"]},
+    "status": {"enum": ["active", "stopped", "completed"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_deep_rounds", "max_worker_calls", "max_elapsed_seconds"],
+      "properties": {
+        "max_deep_rounds": {"const": 3},
+        "max_worker_calls": {"const": 16},
+        "max_elapsed_seconds": {"const": 1800}
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deep_rounds_started", "worker_calls"],
+      "properties": {
+        "deep_rounds_started": {"type": "integer", "minimum": 0},
+        "worker_calls": {"type": "integer", "minimum": 0}
+      }
+    },
+    "stop_reason": {"type": ["string", "null"]},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "event", "label"],
+        "properties": {
+          "at": {"type": "string", "format": "date-time"},
+          "event": {"enum": ["initialized", "worker-call", "deep-round", "stopped", "completed"]},
+          "label": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "env-config.schema.json",
+  "title": "Execution environment configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "execution_backend",
+    "env_check_task_id",
+    "runtime_info_path",
+    "checked_at",
+    "device",
+    "versions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "status": {
+      "const": "ready"
+    },
+    "execution_backend": {
+      "enum": ["local", "worker"]
+    },
+    "worker_submit_url": {
+      "type": ["string", "null"]
+    },
+    "env_check_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime_info_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["triton", "torch", "toolchain"],
+      "properties": {
+        "triton": {"type": "string", "minLength": 1},
+        "torch": {"type": "string", "minLength": 1},
+        "toolchain": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"execution_backend": {"const": "local"}}
+      },
+      "then": {
+        "properties": {
+          "env_check_task_id": {"const": "local"},
+          "worker_submit_url": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"execution_backend": {"const": "worker"}}
+      },
+      "then": {
+        "properties": {
+          "worker_submit_url": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ]
+}
+

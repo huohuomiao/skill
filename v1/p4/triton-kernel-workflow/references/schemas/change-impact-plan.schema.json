@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "change-impact-plan.schema.json",
+  "title": "Selective continuous-validation impact plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "skill_fingerprint", "changed_paths", "required_levels", "affected_stages", "l3_cases", "worker_checks", "hardware_required", "reasons"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "skill_fingerprint": {"type": "string", "minLength": 64},
+    "changed_paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "required_levels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["L1", "L2", "L3"]}},
+    "affected_stages": {"type": "array", "uniqueItems": true, "items": {"enum": ["environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"]}},
+    "l3_cases": {"type": "array", "uniqueItems": true, "items": {"enum": ["elementwise", "reduction", "layout"]}},
+    "worker_checks": {"type": "array", "uniqueItems": true, "items": {"enum": ["submission", "failure-recovery"]}},
+    "hardware_required": {"type": "boolean"},
+    "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  }
+}

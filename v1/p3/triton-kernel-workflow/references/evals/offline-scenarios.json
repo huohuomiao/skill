@@ -1,0 +1,225 @@
+{
+  "schema_version": "1.0",
+  "scenarios": [
+    {
+      "id": "route-full-requirement",
+      "category": "routing",
+      "input": {"mode": "full", "input_kind": "requirement"},
+      "expected": {"workflow": "full-pipeline", "accepted": true}
+    },
+    {
+      "id": "route-code-generation",
+      "category": "routing",
+      "input": {"mode": "code-generation", "input_kind": "requirement"},
+      "expected": {"workflow": "code-generation", "accepted": true}
+    },
+    {
+      "id": "route-code-validation",
+      "category": "routing",
+      "input": {"mode": "code-validation", "input_kind": "existing-code"},
+      "expected": {"workflow": "code-validation", "accepted": true}
+    },
+    {
+      "id": "route-performance-tuning",
+      "category": "routing",
+      "input": {"mode": "performance-tuning", "input_kind": "runnable-kernel"},
+      "expected": {"workflow": "performance-tuning", "accepted": true}
+    },
+    {
+      "id": "route-auto-defaults-full",
+      "category": "routing",
+      "input": {"mode": "auto", "input_kind": "existing-code"},
+      "expected": {"workflow": "full-pipeline", "accepted": true}
+    },
+    {
+      "id": "route-performance-rejects-requirement",
+      "category": "routing",
+      "input": {"mode": "performance-tuning", "input_kind": "requirement"},
+      "expected": {"workflow": "performance-tuning", "accepted": false}
+    },
+    {
+      "id": "full-ready-stages",
+      "category": "stage-gate",
+      "input": {"mode": "full", "backend_ready": true},
+      "expected": {
+        "execute": ["environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"],
+        "skip": []
+      }
+    },
+    {
+      "id": "full-no-backend-stops",
+      "category": "stage-gate",
+      "input": {"mode": "full", "backend_ready": false},
+      "expected": {
+        "execute": ["environment"],
+        "skip": ["requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"]
+      }
+    },
+    {
+      "id": "code-generation-includes-validation",
+      "category": "stage-gate",
+      "input": {"mode": "code-generation", "backend_ready": true},
+      "expected": {
+        "execute": ["code-generation", "code-validation"],
+        "skip": ["environment", "requirement-extraction", "performance-tuning", "finalization"]
+      }
+    },
+    {
+      "id": "optimizer-read-whitelist",
+      "category": "file-access",
+      "input": {
+        "role": "performance-optimizer",
+        "observed": ["current-code", "strategy", "strategy-reference", "env-config"]
+      },
+      "expected": {"allowed": true}
+    },
+    {
+      "id": "optimizer-cross-workdir-denied",
+      "category": "file-access",
+      "input": {
+        "role": "performance-optimizer",
+        "observed": ["current-code", "other-strategy-workdir"]
+      },
+      "expected": {"allowed": false}
+    },
+    {
+      "id": "codegen-normal-two-dispatches",
+      "category": "dispatch",
+      "input": {"route": "normal"},
+      "expected": {
+        "outer_dispatches": 2,
+        "roles": ["kernel-designer", "kernel-builder"]
+      }
+    },
+    {
+      "id": "codegen-fast-one-dispatch",
+      "category": "dispatch",
+      "input": {"route": "fast"},
+      "expected": {
+        "outer_dispatches": 1,
+        "roles": ["kernel-builder"]
+      }
+    },
+    {
+      "id": "softmax-tuning-keeps-optimization-surface",
+      "category": "generation-policy",
+      "input": {
+        "optimization_intent": "handoff-to-tuning",
+        "operator_pattern": "softmax-style"
+      },
+      "expected": {
+        "baseline_form": "chunked-reduction-loop",
+        "passes": ["max", "sum", "normalize-store"],
+        "required_parallel_candidates": [4],
+        "required_stage_candidates": [1, 3]
+      }
+    },
+    {
+      "id": "standalone-codegen-does-not-manufacture-headroom",
+      "category": "generation-policy",
+      "input": {
+        "optimization_intent": "standalone",
+        "operator_pattern": "softmax-style"
+      },
+      "expected": {
+        "baseline_form": "resource-safe-choice",
+        "passes": [],
+        "required_parallel_candidates": [],
+        "required_stage_candidates": []
+      }
+    },
+    {
+      "id": "correctness-skips-performance",
+      "category": "optimization-mode",
+      "input": {"optimization_mode": "correctness"},
+      "expected": {
+        "performance_stage": "skipped",
+        "allows_oob": false,
+        "allows_deep": false,
+        "allows_performance_claim": false
+      }
+    },
+    {
+      "id": "balanced-allows-only-oob",
+      "category": "optimization-mode",
+      "input": {"optimization_mode": "balanced"},
+      "expected": {
+        "performance_stage": "completed",
+        "allows_oob": true,
+        "allows_deep": false,
+        "allows_performance_claim": true
+      }
+    },
+    {
+      "id": "max-performance-allows-deep",
+      "category": "optimization-mode",
+      "input": {"optimization_mode": "max-performance"},
+      "expected": {
+        "performance_stage": "completed",
+        "allows_oob": true,
+        "allows_deep": true,
+        "allows_performance_claim": true
+      }
+    },
+    {
+      "id": "valid-env-schema",
+      "category": "schema",
+      "input": {"artifact": "artifacts/env-config.valid.json", "schema": "../schemas/env-config.schema.json"},
+      "expected": {"valid": true}
+    },
+    {
+      "id": "valid-candidate-schema",
+      "category": "schema",
+      "input": {"artifact": "artifacts/candidate.valid.json", "schema": "../schemas/optimization-candidate.schema.json"},
+      "expected": {"valid": true}
+    },
+    {
+      "id": "invalid-candidate-schema",
+      "category": "schema",
+      "input": {"artifact": "artifacts/candidate.invalid.json", "schema": "../schemas/optimization-candidate.schema.json"},
+      "expected": {"valid": false}
+    },
+    {
+      "id": "rollback-step3-minimal",
+      "category": "rollback",
+      "input": {"failure": "codegen-step3", "fast_path": false},
+      "expected": {"target": "codegen-step3"}
+    },
+    {
+      "id": "rollback-step6-minimal",
+      "category": "rollback",
+      "input": {"failure": "codegen-step6", "fast_path": false},
+      "expected": {"target": "codegen-step6"}
+    },
+    {
+      "id": "rollback-infrastructure",
+      "category": "rollback",
+      "input": {"failure": "infrastructure", "fast_path": false},
+      "expected": {"target": "environment"}
+    },
+    {
+      "id": "rollback-performance-regression",
+      "category": "rollback",
+      "input": {"failure": "performance-regression", "fast_path": false},
+      "expected": {"target": "best-so-far"}
+    },
+    {
+      "id": "no-measurement-no-claim",
+      "category": "evidence",
+      "input": {"backend_ready": false, "measured": false, "accuracy_pass": false},
+      "expected": {"may_claim_performance": false}
+    },
+    {
+      "id": "backend-without-measurement-no-claim",
+      "category": "evidence",
+      "input": {"backend_ready": true, "measured": false, "accuracy_pass": true},
+      "expected": {"may_claim_performance": false}
+    },
+    {
+      "id": "real-measurement-allows-claim",
+      "category": "evidence",
+      "input": {"backend_ready": true, "measured": true, "accuracy_pass": true},
+      "expected": {"may_claim_performance": true}
+    }
+  ]
+}

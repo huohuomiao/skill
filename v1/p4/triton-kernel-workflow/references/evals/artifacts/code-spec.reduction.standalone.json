@@ -1,0 +1,9 @@
+{
+  "compute_formula": "row-wise reduction",
+  "kernel": {
+    "block_params": {"BLOCK_N": [4096]},
+    "compute": {"form": "direct-vectorized"}
+  },
+  "wrapper": {"grid": "(M,)"}
+}
+

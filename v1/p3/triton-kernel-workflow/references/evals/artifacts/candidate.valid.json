@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "candidate_id": "offline-valid",
+  "source_stage": "baseline",
+  "code_path": "fixture.py",
+  "report_path": "fixture.md",
+  "accuracy_pass": true,
+  "latency_ms": 1.0,
+  "bandwidth_gbps": null,
+  "execution_backend": "local",
+  "hardware_model": "offline-device",
+  "benchmark_signature": "offline-signature"
+}

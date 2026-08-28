@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stage-fingerprint.schema.json",
+  "title": "Deterministic stage fingerprint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "stage", "fingerprint", "generated_at", "factors", "evidence"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "stage": {"enum": ["environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"]},
+    "fingerprint": {"type": "string", "minLength": 64},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "factors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_hash", "skill_version", "dependency_versions", "hardware_model", "toolchain_version", "stage_config", "upstream_fingerprints"],
+      "properties": {
+        "input_hash": {"type": "string", "minLength": 64},
+        "skill_version": {"type": "string", "minLength": 64},
+        "dependency_versions": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "hardware_model": {"type": ["string", "null"]},
+        "toolchain_version": {"type": ["string", "null"]},
+        "stage_config": {"type": "object"},
+        "upstream_fingerprints": {"type": "object", "additionalProperties": {"type": "string", "minLength": 64}}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputs", "resources"],
+      "properties": {
+        "inputs": {"type": "object", "additionalProperties": {"type": "string", "minLength": 64}},
+        "resources": {"type": "object", "additionalProperties": {"type": "string", "minLength": 64}}
+      }
+    }
+  }
+}

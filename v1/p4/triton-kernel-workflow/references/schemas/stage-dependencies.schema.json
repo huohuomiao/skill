@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stage-dependencies.schema.json",
+  "title": "Stage-owned Skill resource registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "shared_resources", "stages"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "shared_resources": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"],
+      "properties": {
+        "environment": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "requirement-extraction": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "code-generation": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "code-validation": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "performance-tuning": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "finalization": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

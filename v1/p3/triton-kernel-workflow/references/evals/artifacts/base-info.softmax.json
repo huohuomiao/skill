@@ -1,0 +1,12 @@
+{
+  "op_name": "softmax",
+  "compute_type": "multi-pass-reduction",
+  "compute_formula": "Y[m,n] = exp(X[m,n] - max_j X[m,j]) / sum_j exp(X[m,j] - max_k X[m,k])",
+  "compute_note": "Row-wise softmax fixture",
+  "io_shapes": {
+    "inputs": [{"name": "X", "shape": [4096, 4096], "dtype": "float32"}],
+    "outputs": [{"name": "Y", "shape": [4096, 4096], "dtype": "float32"}]
+  },
+  "reduce_axes": ["N"]
+}
+

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "optimization-candidate.schema.json",
+  "title": "Optimization candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "source_stage",
+    "code_path",
+    "report_path",
+    "accuracy_pass",
+    "latency_ms",
+    "execution_backend",
+    "hardware_model",
+    "benchmark_signature"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "source_stage": {"enum": ["baseline", "oob", "advanced"]},
+    "code_path": {"type": "string", "minLength": 1},
+    "report_path": {"type": "string", "minLength": 1},
+    "accuracy_pass": {"type": "boolean"},
+    "latency_ms": {"type": "number", "exclusiveMinimum": 0},
+    "bandwidth_gbps": {"type": ["number", "null"], "minimum": 0},
+    "execution_backend": {"enum": ["local", "worker"]},
+    "hardware_model": {"type": "string", "minLength": 1},
+    "benchmark_signature": {"type": "string", "minLength": 1}
+  }
+}
+

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-manifest.schema.json",
+  "title": "Workflow state summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mode",
+    "optimization_mode",
+    "workflow_status",
+    "current_stage",
+    "execution_backend",
+    "updated_at",
+    "stages",
+    "selected_checkpoint"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "mode": {"enum": ["full", "code-generation", "code-validation", "performance-tuning"]},
+    "optimization_mode": {"enum": ["correctness", "balanced", "max-performance"]},
+    "workflow_status": {"enum": ["running", "completed", "failed"]},
+    "current_stage": {
+      "enum": [null, "environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"]
+    },
+    "execution_backend": {"enum": [null, "local", "worker"]},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "requirement-extraction", "code-generation", "code-validation", "performance-tuning", "finalization"],
+      "properties": {
+        "environment": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}},
+        "requirement-extraction": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}},
+        "code-generation": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}},
+        "code-validation": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}},
+        "performance-tuning": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}},
+        "finalization": {"type": "object", "additionalProperties": false, "required": ["status", "artifacts", "error", "metadata"], "properties": {"status": {"enum": ["pending", "running", "completed", "failed", "skipped"]}, "artifacts": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}, "error": {"type": ["string", "null"]}, "metadata": {"type": "object"}}}
+      }
+    },
+    "selected_checkpoint": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["candidate_id", "code_path", "latency_ms"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "code_path": {"type": "string", "minLength": 1},
+        "latency_ms": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

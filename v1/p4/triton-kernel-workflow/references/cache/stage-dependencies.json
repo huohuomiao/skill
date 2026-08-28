@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "shared_resources": [
+    "references/contracts/artifact-layout.md",
+    "references/contracts/rollback-policy.md",
+    "references/schemas/run-manifest.schema.json",
+    "scripts/state/update-run-manifest.py"
+  ],
+  "stages": {
+    "environment": [
+      "references/contracts/execution-backend.md",
+      "references/roles/environment-checker.md",
+      "references/schemas/env-config.schema.json",
+      "scripts/environment",
+      "scripts/execution/submit-remote-task.py",
+      "scripts/state/write-env-config.py"
+    ],
+    "requirement-extraction": [
+      "references/roles/requirement-analyzer.md",
+      "references/strategies/kernel-analysis.md"
+    ],
+    "code-generation": [
+      "references/workflows/code-generation.md",
+      "references/roles/kernel-designer.md",
+      "references/roles/kernel-builder.md",
+      "references/roles/reduction-baseline.md",
+      "references/examples/code-generation",
+      "references/schemas/optimization-surface.schema.json",
+      "scripts/validation/validate-optimization-surface.py",
+      "references/backend"
+    ],
+    "code-validation": [
+      "references/workflows/code-validation.md",
+      "references/roles/static-validator.md",
+      "references/roles/runtime-fixer.md",
+      "references/diagnostics",
+      "references/contracts/execution-backend.md",
+      "references/backend"
+    ],
+    "performance-tuning": [
+      "references/workflows/performance-tuning.md",
+      "references/roles/performance-optimizer.md",
+      "references/contracts/tuning-policy.md",
+      "references/contracts/execution-backend.md",
+      "references/strategies",
+      "references/examples/optimization",
+      "references/templates/performance-report.md",
+      "references/backend",
+      "references/schemas/optimization-candidate.schema.json",
+      "references/schemas/strategy-plan.schema.json",
+      "references/schemas/tuning-state.schema.json",
+      "scripts/execution",
+      "scripts/profiling",
+      "scripts/state/manage-tuning-budget.py",
+      "scripts/state/plan-strategies.py",
+      "scripts/state/select-best-candidate.py"
+    ],
+    "finalization": [
+      "references/workflows/finalization.md",
+      "references/templates/final-summary.md"
+    ]
+  }
+}

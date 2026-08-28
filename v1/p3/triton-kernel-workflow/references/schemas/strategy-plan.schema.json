@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "strategy-plan.schema.json",
+  "title": "Static optimization strategy plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "optimization_mode", "input_path", "generated_at", "detected", "strategies", "dynamic_execution"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "optimization_mode": {"enum": ["correctness", "balanced", "max-performance"]},
+    "input_path": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "detected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jit_kernels", "has_reduction", "grid_bounded", "has_complex_index", "tunable_parameters", "has_device_math_pattern", "has_division", "has_tiling_surface"],
+      "properties": {
+        "jit_kernels": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "has_reduction": {"type": "boolean"},
+        "grid_bounded": {"type": "boolean"},
+        "has_complex_index": {"type": "boolean"},
+        "tunable_parameters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "has_device_math_pattern": {"type": "boolean"},
+        "has_division": {"type": "boolean"},
+        "has_tiling_surface": {"type": "boolean"}
+      }
+    },
+    "strategies": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["order", "name", "phase", "decision", "reason", "strategy_doc"],
+        "properties": {
+          "order": {"type": "integer", "minimum": 1},
+          "name": {"type": "string", "minLength": 1},
+          "phase": {"enum": ["oob", "advanced"]},
+          "decision": {"enum": ["apply", "skip"]},
+          "reason": {"type": "string", "minLength": 1},
+          "strategy_doc": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "dynamic_execution": {"const": "serial"}
+  }
+}
+

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "status": "ready",
+  "execution_backend": "local",
+  "worker_submit_url": null,
+  "env_check_task_id": "local",
+  "runtime_info_path": "/offline-fixture/runtime_info.txt",
+  "checked_at": "2026-08-28T00:00:00+00:00",
+  "device": {"model": "offline-device"},
+  "versions": {
+    "triton": "fixture",
+    "torch": "fixture",
+    "toolchain": "fixture"
+  }
+}

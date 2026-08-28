@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "best-candidate.schema.json",
+  "title": "Selected optimization checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "selected_at",
+    "selected_candidate",
+    "compared_candidates",
+    "best_code_path",
+    "final_code_path"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "selected_at": {"type": "string", "format": "date-time"},
+    "selected_candidate": {
+      "$ref": "optimization-candidate.schema.json"
+    },
+    "compared_candidates": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "best_code_path": {"type": "string", "minLength": 1},
+    "final_code_path": {"type": "string", "minLength": 1}
+  }
+}
+

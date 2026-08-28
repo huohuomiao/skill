@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "validation-report.schema.json",
+  "title": "Layered validation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "level",
+    "status",
+    "started_at",
+    "finished_at",
+    "elapsed_seconds",
+    "skill_fingerprint",
+    "hardware_evidence",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "level": {"enum": ["L1", "L2", "L3"]},
+    "status": {"enum": ["pass", "fail", "skipped"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "elapsed_seconds": {"type": "number", "minimum": 0},
+    "skill_fingerprint": {"type": "string", "minLength": 64},
+    "hardware_evidence": {"type": "boolean"},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "details"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pass", "fail", "warning", "skipped"]},
+          "details": {"type": "object"}
+        }
+      }
+    }
+  }
+}

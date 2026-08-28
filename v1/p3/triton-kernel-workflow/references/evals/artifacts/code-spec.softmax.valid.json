@@ -1,0 +1,33 @@
+{
+  "compute_formula": "row-wise softmax",
+  "kernel": {
+    "block_params": {
+      "BLOCK_M": [4, 8, 16],
+      "BLOCK_N": [256, 512, 1024]
+    },
+    "reduce_loop_pass1": {"reduce_dim": "N", "reduce_block": "BLOCK_N", "operation": "max"},
+    "reduce_loop_pass2": {"reduce_dim": "N", "reduce_block": "BLOCK_N", "operation": "sum"},
+    "reduce_loop_pass3": {"reduce_dim": "N", "reduce_block": "BLOCK_N", "operation": "normalize-store"}
+  },
+  "wrapper": {"grid": "(triton.cdiv(M, BLOCK_M),)"},
+  "optimization_surface": {
+    "intent": "handoff-to-tuning",
+    "operator_pattern": "softmax-style",
+    "baseline_form": "chunked-reduction-loop",
+    "reduction_axis": {
+      "name": "N",
+      "extent": 4096,
+      "block_parameter": "BLOCK_N",
+      "block_candidates": [256, 512, 1024]
+    },
+    "passes": ["max", "sum", "normalize-store"],
+    "parallel_block_parameter": "BLOCK_M",
+    "parallel_block_candidates": [4, 8, 16],
+    "autotune": {
+      "num_stages_candidates": [1, 3],
+      "num_warps_candidates": [1],
+      "nram_model": "lifetime-aware"
+    }
+  }
+}
+

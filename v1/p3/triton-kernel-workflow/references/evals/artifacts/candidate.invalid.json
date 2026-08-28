@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "candidate_id": "offline-invalid",
+  "source_stage": "oob",
+  "code_path": "fixture.py",
+  "report_path": "fixture.md",
+  "accuracy_pass": true,
+  "execution_backend": "local",
+  "hardware_model": "offline-device",
+  "benchmark_signature": "offline-signature"
+}

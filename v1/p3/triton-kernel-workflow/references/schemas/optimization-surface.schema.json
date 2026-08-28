@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "optimization-surface.schema.json",
+  "title": "Reduction optimization handoff surface",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent",
+    "operator_pattern",
+    "baseline_form",
+    "reduction_axis",
+    "passes",
+    "parallel_block_parameter",
+    "parallel_block_candidates",
+    "autotune"
+  ],
+  "properties": {
+    "intent": {"enum": ["handoff-to-tuning", "standalone"]},
+    "operator_pattern": {"enum": ["single-reduction", "multi-pass-reduction", "softmax-style"]},
+    "baseline_form": {"enum": ["chunked-reduction-loop", "direct-vectorized"]},
+    "reduction_axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "extent", "block_parameter", "block_candidates"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "extent": {"type": ["integer", "null"], "minimum": 1},
+        "block_parameter": {"type": "string", "minLength": 1},
+        "block_candidates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "passes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "parallel_block_parameter": {"type": ["string", "null"]},
+    "parallel_block_candidates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "autotune": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["num_stages_candidates", "num_warps_candidates", "nram_model"],
+      "properties": {
+        "num_stages_candidates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "num_warps_candidates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "nram_model": {"const": "lifetime-aware"}
+      }
+    }
+  }
+}
+

@@ -1,0 +1,40 @@
+{
+  "compute_formula": "Y[n,k] = sum_m X[n,m,k]",
+  "compute_note": {
+    "description": "对输入 X 沿 M 轴求和。",
+    "torch_impl": "Y = X.sum(dim=1)"
+  },
+  "fusion_note": "融合: N + K -> NK",
+  "kernel": {
+    "block_params": {"BLOCK_NK": [2048], "BLOCK_M": [32]},
+    "aux_params": {"nk": "pid * BLOCK_NK + tl.arange(0, BLOCK_NK)"},
+    "loads": {
+      "X_ptr": {
+        "index_X_ptr": "nk[:, None] * M + m[None, :]",
+        "mask_X_ptr": "nk[:, None] < N*K"
+      }
+    },
+    "stores": {
+      "Y_ptr": {
+        "index_Y_ptr": "nk",
+        "mask_Y_ptr": "nk < N*K"
+      }
+    },
+    "reduce_loop": {
+      "reduce_dim": "M",
+      "reduce_var": "m",
+      "reduce_block": "BLOCK_M",
+      "accumulator": "acc += tl.sum(x, axis=1)",
+      "reduction_strategy": "inline_block_reduction",
+      "accumulator_shape": "[BLOCK_NK]"
+    },
+    "compute": {
+      "formula": "accumulate X along M",
+      "note": "在块内完成 M 轴归约。"
+    }
+  },
+  "wrapper": {
+    "grid": "(triton.cdiv(N*K, BLOCK_NK),)",
+    "block_params": {"BLOCK_NK": 2048, "BLOCK_M": 32}
+  }
+}

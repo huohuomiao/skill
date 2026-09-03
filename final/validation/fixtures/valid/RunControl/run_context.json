@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "execution_backend": "local",
+  "hardware_key": "MLU370-X8:cluster-16:memory-48GB",
+  "toolchain_key": "neuware-1.18:triton-3.0:torch-2.4",
+  "device_info": {
+    "model": "MLU370-X8",
+    "cluster_count": 16
+  },
+  "toolchain_info": {
+    "neuware": "1.18",
+    "triton": "3.0",
+    "torch": "2.4"
+  }
+}

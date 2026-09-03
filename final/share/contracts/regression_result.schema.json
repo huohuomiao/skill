@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "regression_result.schema.json",
+  "title": "Normalized MLU Triton regression result",
+  "type": "object",
+  "required": ["schema_version", "run_id", "hardware_key", "toolchain_key", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "hardware_key": {"type": "string", "minLength": 1},
+    "toolchain_key": {"type": "string", "minLength": 1},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["case_id", "status", "accuracy", "performance"],
+        "properties": {
+          "case_id": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["completed", "failed", "skipped"]},
+          "accuracy": {
+            "type": "object",
+            "required": ["pass", "atol", "rtol", "max_diff"],
+            "properties": {
+              "pass": {"type": "boolean"},
+              "atol": {"type": "number"},
+              "rtol": {"type": "number"},
+              "max_diff": {"type": ["number", "null"]}
+            },
+            "additionalProperties": false
+          },
+          "performance": {
+            "type": "object",
+            "required": ["latency_ms"],
+            "properties": {"latency_ms": {"type": ["number", "null"]}},
+            "additionalProperties": false
+          },
+          "resources": {
+            "type": "object",
+            "properties": {
+              "wall_time_sec": {"type": "number"},
+              "token_count": {"type": "integer"},
+              "subagent_calls": {"type": "integer"},
+              "worker_calls": {"type": "integer"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

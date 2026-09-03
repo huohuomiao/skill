@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "bundle": "mlu-triton-shared-resources",
+  "groups": {
+    "contracts": {
+      "path": "share/contracts",
+      "purpose": "Machine-readable artifact, state, cache, and regression contracts"
+    },
+    "platform_references": {
+      "path": "share/mlu/references",
+      "purpose": "Single source of truth for MLU platform rules, primitives, and libdevice"
+    },
+    "runtime_probe": {
+      "path": "share/mlu/runtime",
+      "purpose": "Read-only device and toolchain probes; environment health is never cached"
+    },
+    "performance_collection": {
+      "path": "share/mlu/perf-analyzer",
+      "purpose": "MLU performance evidence collection used by the optimizer"
+    }
+  },
+  "rules": [
+    "share is not an invocable skill",
+    "skills load only the resource groups declared by their current stage",
+    "workflow and routing instructions remain in the owning skill",
+    "resource content participates in stage fingerprints"
+  ]
+}

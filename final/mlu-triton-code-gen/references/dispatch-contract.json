@@ -1,0 +1,311 @@
+{
+  "schema_version": 1,
+  "version": "final",
+  "phase": "stage-2-token-and-dispatch-overhead",
+  "measurement": {
+    "dispatch_count": "Exact number of subagent launches before optimization.",
+    "static_context_bytes": "Sum of stable role/reference file sizes scheduled for each agent call. Repeated files are counted once per call.",
+    "excluded": [
+      "Runtime tokenizer accounting",
+      "System and platform prompts outside this repository",
+      "Workload-specific requirement, JSON, source-code and execution-log sizes",
+      "The two unchanged Main agents and their stable context files"
+    ]
+  },
+  "targets": {
+    "normal_dispatch_reduction_pct": 50.0,
+    "normal_static_context_reduction_pct": 50.0
+  },
+  "routes": {
+    "normal": {
+      "direct-pass": {
+        "baseline_dispatches": {
+          "main": 2,
+          "codegen": 6,
+          "review": 0,
+          "total": 8
+        },
+        "optimized_dispatches": {
+          "main": 2,
+          "codegen": 2,
+          "review": 0,
+          "total": 4
+        }
+      },
+      "repair": {
+        "baseline_dispatches": {
+          "main": 2,
+          "codegen": 6,
+          "review": 2,
+          "total": 10
+        },
+        "optimized_dispatches": {
+          "main": 2,
+          "codegen": 2,
+          "review": 1,
+          "total": 5
+        }
+      }
+    },
+    "triton-fast": {
+      "direct-pass": {
+        "baseline_dispatches": {
+          "main": 2,
+          "codegen": 1,
+          "review": 0,
+          "total": 3
+        },
+        "optimized_dispatches": {
+          "main": 2,
+          "codegen": 1,
+          "review": 0,
+          "total": 3
+        }
+      },
+      "repair": {
+        "baseline_dispatches": {
+          "main": 2,
+          "codegen": 1,
+          "review": 2,
+          "total": 5
+        },
+        "optimized_dispatches": {
+          "main": 2,
+          "codegen": 1,
+          "review": 1,
+          "total": 4
+        }
+      }
+    }
+  },
+  "static_context_calls": {
+    "baseline": {
+      "normal": {
+        "direct-pass": [
+          {
+            "stage": "extract-base-info",
+            "files": ["mlu-triton-code-gen/subagents/ExtractBaseInfo.md"]
+          },
+          {
+            "stage": "trace-block-mapping",
+            "files": ["mlu-triton-code-gen/subagents/TraceBlockMapping.md"]
+          },
+          {
+            "stage": "axis-fusion",
+            "files": ["mlu-triton-code-gen/subagents/AxisFusion.md"]
+          },
+          {
+            "stage": "generate-spec",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenerateSpec.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "generate-code",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenerateCode.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "generate-test",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenTestCode.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          }
+        ],
+        "repair": [
+          {
+            "stage": "extract-base-info",
+            "files": ["mlu-triton-code-gen/subagents/ExtractBaseInfo.md"]
+          },
+          {
+            "stage": "trace-block-mapping",
+            "files": ["mlu-triton-code-gen/subagents/TraceBlockMapping.md"]
+          },
+          {
+            "stage": "axis-fusion",
+            "files": ["mlu-triton-code-gen/subagents/AxisFusion.md"]
+          },
+          {
+            "stage": "generate-spec",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenerateSpec.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "generate-code",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenerateCode.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "generate-test",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenTestCode.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "static-review",
+            "files": [
+              "mlu-triton-code-review/StaticReviewer.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/common_error.md",
+              "mlu-triton-code-review/ref/report_template.md"
+            ]
+          },
+          {
+            "stage": "dynamic-fix",
+            "files": [
+              "mlu-triton-code-review/DynamicFixer.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/troubleshooting.md"
+            ]
+          }
+        ]
+      },
+      "triton-fast": {
+        "direct-pass": [
+          {
+            "stage": "generate-test",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenTestCode.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          }
+        ],
+        "repair": [
+          {
+            "stage": "generate-test",
+            "files": [
+              "mlu-triton-code-gen/subagents/GenTestCode.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "static-review",
+            "files": [
+              "mlu-triton-code-review/StaticReviewer.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/common_error.md",
+              "mlu-triton-code-review/ref/report_template.md"
+            ]
+          },
+          {
+            "stage": "dynamic-fix",
+            "files": [
+              "mlu-triton-code-review/DynamicFixer.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/troubleshooting.md"
+            ]
+          }
+        ]
+      }
+    },
+    "optimized": {
+      "normal": {
+        "direct-pass": [
+          {
+            "stage": "design",
+            "files": [
+              "mlu-triton-code-gen/subagents/DesignKernel.md",
+              "mlu-triton-code-gen/references/artifact-contracts.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "build",
+            "files": [
+              "mlu-triton-code-gen/subagents/BuildKernel.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          }
+        ],
+        "repair": [
+          {
+            "stage": "design",
+            "files": [
+              "mlu-triton-code-gen/subagents/DesignKernel.md",
+              "mlu-triton-code-gen/references/artifact-contracts.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "build",
+            "files": [
+              "mlu-triton-code-gen/subagents/BuildKernel.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "review-and-fix",
+            "files": [
+              "mlu-triton-code-review/ReviewAndFix.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/common_error.md",
+              "mlu-triton-code-review/ref/troubleshooting.md",
+              "mlu-triton-code-review/ref/report_template.md"
+            ]
+          }
+        ]
+      },
+      "triton-fast": {
+        "direct-pass": [
+          {
+            "stage": "build",
+            "files": [
+              "mlu-triton-code-gen/subagents/BuildKernel.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          }
+        ],
+        "repair": [
+          {
+            "stage": "build",
+            "files": [
+              "mlu-triton-code-gen/subagents/BuildKernel.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md"
+            ]
+          },
+          {
+            "stage": "review-and-fix",
+            "files": [
+              "mlu-triton-code-review/ReviewAndFix.md",
+              "share/mlu/references/primitives.md",
+              "share/mlu/references/platform-rules.md",
+              "share/mlu/references/libdevice.md",
+              "mlu-triton-code-review/ref/common_error.md",
+              "mlu-triton-code-review/ref/troubleshooting.md",
+              "mlu-triton-code-review/ref/report_template.md"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

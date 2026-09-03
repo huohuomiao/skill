@@ -1,0 +1,149 @@
+{
+  "version": 2,
+  "stages": [
+    {
+      "name": "env_config",
+      "dependencies": [],
+      "enabled_modes": ["correctness", "balanced", "max-performance"],
+      "cacheable": false,
+      "cache_validation_required": [],
+      "context_sensitive": false,
+      "mode_sensitive": false,
+      "budget_sensitive": false,
+      "sources": [
+        "mlu-triton-main/SKILL.md",
+        "mlu-triton-main/subagents/EnvConfig.md",
+        "mlu-triton-main/subagents/scripts/*.py",
+        "mlu-triton-main/scripts/run_control.py",
+        "share/manifest.json",
+        "share/mlu/runtime/*.py",
+        "share/contracts/run_context.schema.json"
+      ],
+      "required_artifacts": [
+        "EnvConfig/config.md",
+        "EnvConfig/runtime_info.txt",
+        "EnvConfig/run_context.json"
+      ]
+    },
+    {
+      "name": "extractor",
+      "dependencies": ["env_config"],
+      "enabled_modes": ["correctness", "balanced", "max-performance"],
+      "cacheable": true,
+      "cache_validation_required": ["l1", "l2"],
+      "context_sensitive": false,
+      "mode_sensitive": false,
+      "budget_sensitive": false,
+      "sources": [
+        "mlu-triton-main/SKILL.md",
+        "mlu-triton-main/subagents/Extractor.md",
+        "mlu-triton-main/scripts/run_control.py",
+        "share/manifest.json",
+        "share/contracts/cache_metadata.schema.json"
+      ],
+      "required_artifacts": ["Extractor/requirement.md"],
+      "optional_artifacts": ["Extractor/original_code.py"]
+    },
+    {
+      "name": "kernel_gen",
+      "dependencies": ["extractor"],
+      "enabled_modes": ["correctness", "balanced", "max-performance"],
+      "cacheable": true,
+      "cache_validation_required": ["l1", "l2", "l3"],
+      "checkpoint_validation_required": {
+        "step1": ["l1", "l2"],
+        "step2": ["l1", "l2"],
+        "step3": ["l1", "l2"],
+        "step4": ["l1", "l2"],
+        "step5": ["l1", "l2"],
+        "step6": ["l1", "l2"],
+        "step7": ["l1", "l2", "l3"],
+        "design": ["l1", "l2"],
+        "build": ["l1", "l2"],
+        "review": ["l1", "l2", "l3"]
+      },
+      "context_sensitive": true,
+      "mode_sensitive": false,
+      "budget_sensitive": false,
+      "sources": [
+        "mlu-triton-main/SKILL.md",
+        "mlu-triton-main/scripts/run_control.py",
+        "mlu-triton-code-gen/SKILL.md",
+        "mlu-triton-code-gen/subagents/DesignKernel.md",
+        "mlu-triton-code-gen/subagents/BuildKernel.md",
+        "mlu-triton-code-gen/references/artifact-contracts.md",
+        "mlu-triton-code-gen/references/dispatch-contract.json",
+        "mlu-triton-code-gen/scripts/dispatch_metrics.py",
+        "mlu-triton-code-review/SKILL.md",
+        "mlu-triton-code-review/ReviewAndFix.md",
+        "mlu-triton-code-review/ref/*.md",
+        "share/manifest.json",
+        "share/mlu/references/*.md",
+        "share/contracts/cache_metadata.schema.json",
+        "share/contracts/step*.schema.json",
+        "share/contracts/review_result.schema.json"
+      ],
+      "required_artifacts": [
+        "KernelGen/triton_code_fix.py",
+        "KernelGen/triton_report.md",
+        "KernelGen/review_result.json",
+        "KernelGen/dispatch_metrics.json"
+      ],
+      "optional_artifacts": [
+        "KernelGen/*.json",
+        "KernelGen/*.py",
+        "KernelGen/*.md"
+      ]
+    },
+    {
+      "name": "optimizer",
+      "dependencies": ["kernel_gen"],
+      "enabled_modes": ["balanced", "max-performance"],
+      "cacheable": true,
+      "cache_validation_required": ["l1", "l2", "l3"],
+      "context_sensitive": true,
+      "mode_sensitive": true,
+      "budget_sensitive": true,
+      "sources": [
+        "mlu-triton-main/SKILL.md",
+        "mlu-triton-main/scripts/run_control.py",
+        "mlu-triton-optimize/**/*.md",
+        "mlu-triton-optimize/**/*.py",
+        "share/manifest.json",
+        "share/mlu/optimize/*.md",
+        "share/mlu/perf-analyzer/*",
+        "share/mlu/references/*.md",
+        "share/contracts/cache_metadata.schema.json",
+        "share/contracts/optimization_*.schema.json"
+      ],
+      "required_artifacts": [
+        "Optimizer/triton_optimized.py",
+        "Optimizer/triton_optimized.md",
+        "Optimizer/optimization_plan.json",
+        "Optimizer/optimization_state.json"
+      ],
+      "optional_artifacts": [
+        "Optimizer/**/*.json",
+        "Optimizer/**/*.py",
+        "Optimizer/**/*.md"
+      ]
+    },
+    {
+      "name": "finalize",
+      "dependencies": ["kernel_gen", "optimizer"],
+      "enabled_modes": ["correctness", "balanced", "max-performance"],
+      "cacheable": false,
+      "cache_validation_required": [],
+      "context_sensitive": true,
+      "mode_sensitive": true,
+      "budget_sensitive": true,
+      "sources": [
+        "mlu-triton-main/SKILL.md",
+        "mlu-triton-main/scripts/run_control.py",
+        "share/manifest.json",
+        "share/contracts/regression_result.schema.json"
+      ],
+      "required_artifacts": ["triton_final.py", "summary.md", "regression_result.json"]
+    }
+  ]
+}

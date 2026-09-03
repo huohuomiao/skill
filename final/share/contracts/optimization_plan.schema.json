@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "optimization_plan.schema.json",
+  "title": "Selective optimization plan",
+  "type": "object",
+  "required": [
+    "version",
+    "created_at",
+    "mode",
+    "input_path",
+    "input_sha256",
+    "manual_review_required",
+    "limits",
+    "signals",
+    "oob_strategies",
+    "selected_oob_strategies",
+    "advanced"
+  ],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "mode": {"type": "string", "enum": ["correctness", "balanced", "max-performance"]},
+    "input_path": {"type": "string", "minLength": 1},
+    "input_sha256": {"type": "string", "minLength": 64},
+    "manual_review_required": {"type": "boolean"},
+    "manual_review_reason": {"type": ["string", "null"]},
+    "limits": {
+      "type": "object",
+      "required": ["max_wall_time_sec", "max_subagent_calls", "max_worker_calls", "max_strategy_attempts", "max_advanced_iterations", "advanced_patience", "min_improvement_pct"],
+      "properties": {
+        "max_wall_time_sec": {"type": "integer"},
+        "max_subagent_calls": {"type": "integer"},
+        "max_worker_calls": {"type": "integer"},
+        "max_strategy_attempts": {"type": "integer"},
+        "max_advanced_iterations": {"type": "integer"},
+        "advanced_patience": {"type": "integer"},
+        "min_improvement_pct": {"type": "number"}
+      },
+      "additionalProperties": true
+    },
+    "signals": {"type": "object"},
+    "oob_strategies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order", "name", "selected", "reason"],
+        "properties": {
+          "order": {"type": "integer"},
+          "name": {"type": "string", "minLength": 1},
+          "selected": {"type": "boolean"},
+          "reason": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "selected_oob_strategies": {"type": "array", "items": {"type": "string"}},
+    "advanced": {
+      "type": "object",
+      "required": ["enabled", "reason", "candidates"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "reason": {"type": "string", "minLength": 1},
+        "candidates": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

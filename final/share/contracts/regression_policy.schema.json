@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "regression_policy.schema.json",
+  "title": "MLU Triton regression policy",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "require_same_context",
+    "require_accuracy_pass",
+    "require_performance_metric",
+    "require_resource_metrics",
+    "max_latency_regression_pct",
+    "max_wall_time_regression_pct",
+    "max_token_regression_pct",
+    "max_subagent_call_increase",
+    "max_worker_call_increase"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "require_same_context": {"type": "boolean"},
+    "require_accuracy_pass": {"type": "boolean"},
+    "require_performance_metric": {"type": "boolean"},
+    "require_resource_metrics": {"type": "boolean"},
+    "max_latency_regression_pct": {"type": "number"},
+    "max_wall_time_regression_pct": {"type": "number"},
+    "max_token_regression_pct": {"type": "number"},
+    "max_subagent_call_increase": {"type": "number"},
+    "max_worker_call_increase": {"type": "number"}
+  },
+  "additionalProperties": false
+}

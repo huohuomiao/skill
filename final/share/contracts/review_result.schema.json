@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review_result.schema.json",
+  "title": "MLU Triton code review result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "validation_level",
+    "execution_backend",
+    "attempts",
+    "accuracy",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {
+      "type": "string",
+      "enum": ["passed", "repaired", "failed", "infrastructure_error"]
+    },
+    "validation_level": {"const": "l3"},
+    "execution_backend": {"type": "string", "enum": ["local", "worker"]},
+    "attempts": {"type": "integer", "minimum": 1, "maximum": 6},
+    "accuracy": {
+      "type": "object",
+      "required": ["pass"],
+      "properties": {
+        "pass": {"type": "boolean"},
+        "atol": {"type": ["number", "null"]},
+        "rtol": {"type": ["number", "null"]},
+        "max_diff": {"type": ["number", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["fixed_code", "report"],
+      "properties": {
+        "fixed_code": {"type": "string", "minLength": 1},
+        "report": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "failure_reason": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

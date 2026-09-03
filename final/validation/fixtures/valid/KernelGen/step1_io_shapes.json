@@ -1,0 +1,14 @@
+{
+  "X": {
+    "type": "input",
+    "axis": ["N", "M", "K"],
+    "shape": [16, 32, 128],
+    "contiguity": [true, false, true]
+  },
+  "Y": {
+    "type": "output",
+    "axis": ["N", "K"],
+    "shape": [16, 128],
+    "contiguity": [true, true]
+  }
+}

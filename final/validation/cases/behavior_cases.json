@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "requirement_normal_path",
+      "description": "自然语言需求必须进入完整的代码生成设计路径。",
+      "input_kind": "requirement",
+      "requires_mlu": false,
+      "expected_route": {
+        "must_run": ["EnvConfig", "Extractor", "DesignKernel", "BuildKernel", "CodeReview"],
+        "must_skip": [],
+        "terminal": "KernelGen/triton_code_fix.py"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-code-gen/SKILL.md",
+          "contains": ["`normal`", "`DesignKernel`, then `BuildKernel`"]
+        }
+      ]
+    },
+    {
+      "id": "triton_input_fast_path",
+      "description": "已有 Triton 代码必须跳过设计阶段并直接进入测试生成。",
+      "input_kind": "triton_code",
+      "requires_mlu": false,
+      "expected_route": {
+        "must_run": ["EnvConfig", "Extractor", "BuildKernel", "CodeReview"],
+        "must_skip": ["DesignKernel"],
+        "terminal": "KernelGen/triton_code_fix.py"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-code-gen/SKILL.md",
+          "contains": ["`triton_fast`", "`{output_dir}/Extractor/original_code.py`"]
+        }
+      ]
+    },
+    {
+      "id": "code_review_original_pass",
+      "description": "原代码通过时不得进入静态或动态修复。",
+      "input_kind": "executable_triton",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["CodeReviewInitialRun"],
+        "must_skip": ["ReviewAndFix"],
+        "terminal": "xxx_fix.py"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-code-review/SKILL.md",
+          "contains": ["Pass: copy it unchanged", "Do not dispatch an agent"]
+        }
+      ]
+    },
+    {
+      "id": "code_review_infrastructure_failure",
+      "description": "基础设施错误不得触发 Kernel 改写。",
+      "input_kind": "infrastructure_failure",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["CodeReviewInitialRun"],
+        "must_skip": ["ReviewAndFix", "KernelMutation"],
+        "terminal": "report_infrastructure_error"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-code-review/SKILL.md",
+          "contains": ["Infrastructure failure", "false passing candidate"]
+        }
+      ]
+    },
+    {
+      "id": "code_review_dynamic_cap",
+      "description": "动态修复必须具有确定的停止条件。",
+      "input_kind": "kernel_failure",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["ReviewAndFix"],
+        "must_skip": [],
+        "terminal": "pass_or_max_5_iterations"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-code-review/SKILL.md",
+          "contains": ["five repair rounds", "two consecutive identical failures"]
+        }
+      ]
+    },
+    {
+      "id": "advanced_optimization_output_priority",
+      "description": "深度优化产物存在时必须作为最终候选，OOB 只能作为回退。",
+      "input_kind": "optimized_triton",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["OOBOptimization", "AdvancedOptimization", "FinalSelection"],
+        "must_skip": [],
+        "terminal": "Optimizer/triton_optimized.py"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-optimize/SKILL.md",
+          "contains": ["optimization_state.json.best.artifact_path", "`Optimizer/triton_advanced_optimized.py`", "`Optimizer/triton_oob_optimized.py`"]
+        }
+      ]
+    },
+    {
+      "id": "local_failure_worker_fallback",
+      "description": "本地环境检查失败时必须复用当前 Job 的 Worker。",
+      "input_kind": "local_environment_failure",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["LocalEnvCheck", "WorkerEnvCheck"],
+        "must_skip": ["CreateNewJob"],
+        "terminal": "execution_backend_worker_or_stop"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-main/SKILL.md",
+          "contains": ["如果任意一个脚本在本地执行环境失败", "禁止为了编译、测试、精度或性能验证再新建一个 Job"]
+        }
+      ]
+    },
+    {
+      "id": "correctness_mode_skips_optimizer",
+      "description": "正确性模式直接交付 Code Gen 产物，不创建伪造的 Optimizer 产物。",
+      "input_kind": "correctness_only",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["EnvConfig", "Extractor", "CodeGen", "FinalSummary"],
+        "must_skip": ["OOBOptimization", "AdvancedOptimization"],
+        "terminal": "triton_final.py_from_KernelGen"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-main/SKILL.md",
+          "contains": ["`correctness` 跳过步骤 4", "correctness` 使用 `KernelGen/triton_code_fix.py`"]
+        }
+      ]
+    },
+    {
+      "id": "balanced_mode_selective_oob",
+      "description": "均衡模式只执行静态计划选中的 OOB 策略，不进入深度优化。",
+      "input_kind": "balanced_optimization",
+      "requires_mlu": true,
+      "expected_route": {
+        "must_run": ["OptimizationPlan", "SelectedOOB", "BudgetChecks"],
+        "must_skip": ["UnselectedOOB", "AdvancedOptimization"],
+        "terminal": "Optimizer/triton_optimized.py"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-optimize/SKILL.md",
+          "contains": ["不得执行 `optimization_plan.json` 中 `selected=false` 的 OOB 策略", "`balanced`", "不执行 | 默认模式"]
+        }
+      ]
+    },
+    {
+      "id": "global_budget_hard_stop",
+      "description": "达到任一优化预算上限后不得新增 Subagent、Worker 或深度迭代。",
+      "input_kind": "budget_exhaustion",
+      "requires_mlu": false,
+      "expected_route": {
+        "must_run": ["BudgetCheck", "StopReasonReport"],
+        "must_skip": ["NewSubagent", "NewWorkerTask", "BudgetReset"],
+        "terminal": "best_valid_candidate_or_original"
+      },
+      "source_assertions": [
+        {
+          "file": "mlu-triton-optimize/SKILL.md",
+          "contains": ["每次 Subagent 或 Worker 调用前都必须先执行预算 `check`", "不得通过重启状态文件规避预算"]
+        }
+      ]
+    }
+  ]
+}
